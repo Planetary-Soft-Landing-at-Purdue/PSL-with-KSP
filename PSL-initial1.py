@@ -6,6 +6,7 @@ from mpl_toolkits import mplot3d
 
 steps, dimensions = 100, 3
 X, Y, Z = 50, 2, -10
+
 theta   = math.tan(math.pi / 4)
 
 xyz = cp.Variable((steps, dimensions))
