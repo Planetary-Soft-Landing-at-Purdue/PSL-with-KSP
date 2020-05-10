@@ -2,7 +2,13 @@ import planetarySoftLanding as psl
 import cvxpy as cp  
 import numpy as np 
 import matplotlib.pyplot as plt 
-from math import tan, pi, exp, cos, log
+from math import tan, pi, exp, cos, log, factorial
+
+def matExp(A,x):
+    expMat = np.zeros_like(A)
+    for i in range(30):
+        expMat = expMat + np.linalg.matrix_power(A,i)*x**i/factorial(i)
+    return expMat
 
 timeTotal = 25      # number of time steps
 
@@ -22,13 +28,13 @@ constraints = [x_0      == psl.x_0,
                ]
 
 for t in range(timeTotal):
-    x_r = cp.matmul( np.exp(psl.A * t), x_0 )
-    x_c = np.sum([.01 * np.dot( np.exp(psl.A * (1-.01*tao)), psl.B ) for tao in range(100)], axis=0)
-    x_g = np.sum([.01 * np.dot( np.exp(psl.A * (t-.01*tao)), psl.g ) for tao in range(100)], axis=0)
+    x_r = cp.matmul( matExp(psl.A, t), x_0 )
+    x_c = np.sum([.01 * np.dot( matExp(psl.A, (1-.01*tao)), psl.B ) for tao in range(100)], axis=0)
+    x_g = np.sum([.01 * np.dot( matExp(psl.A, (t-.01*tao)), psl.g ) for tao in range(100)], axis=0)
     
     z_0   = log(psl.m_0 - psl.alpha*psl.rho_2*t)
-    sLow  = psl.rho_1*np.exp(-z_0) * (1 - (z_0-z_t[t]) + .5*(z_0-z_t[t])**2)
-    sHigh = psl.rho_2*np.exp(-z_0) * (1 - (z_0-z_t[t]))
+    sLow  = psl.rho_1*exp(-z_0) * (1 - (z_0-z_t[t]) + .5*(z_0-z_t[t])**2)
+    sHigh = psl.rho_2*exp(-z_0) * (1 - (z_0-z_t[t]))
     
     constraints += [sLow <= sigma[t], sigma[t] <= sHigh, 
                     sigma[t]         >= cp.norm(T_x[t]**2 + T_y[t]**2 + T_z[t]**2),
