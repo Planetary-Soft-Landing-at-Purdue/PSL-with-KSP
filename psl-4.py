@@ -14,7 +14,7 @@ def matExp(A,x):        # finds matrix exponential using taylor polynomials, A -
         expMat = expMat + np.linalg.matrix_power(A,i) * x**i/factorial(i)
     return expMat
 
-timeTotal = 11.2                    # total time of operation (seconds)
+timeTotal = 20                      # total time of operation (seconds)
 timeSteps = int(timeTotal//psl.dt)  # number of time steps, total time divided by size of time step
 dt        = psl.dt                  # time step (seconds)
 
@@ -41,12 +41,10 @@ for k in range(1, timeSteps):
     x_r = matExp( psl.A, k*dt )        
     
     x_c = np.zeros((7, 4*timeSteps))
-    for tao in range(k):
-        x_c[:, 4*tao:4*tao+4] = np.dot( matExp( -psl.A, k*dt ), psl.B )
-    x_c = np.dot( matExp(psl.A, k*dt ), x_c )
+    for tau in range(k):
+        x_c[:, 4*tau:4*tau+4] = np.dot( matExp( psl.A, k*dt ), psl.B )
 
-    x_g = np.sum([np.dot( matExp(-psl.A, (dt*tao)), psl.g ) for tao in range(k)], axis=0)
-    x_g = cp.matmul( matExp(psl.A, k*dt), x_g )
+    x_g = np.sum([np.dot( matExp( psl.A, (dt*tau) ), psl.g ) for tau in range(k)], axis=0)
     
     z_0   = log(psl.m_0 - psl.alpha*psl.rho_2 * k*dt)
     sLow  = psl.rho_1*exp(-z_0) * (1 - (z_k[k] - z_0) + .5*(z_k[k] - z_0)**2)
@@ -70,6 +68,8 @@ try:
 
     if str(x_k.value) != "None":
         print(x_k.value[:, 0:3])
+        #print(x_k.value[:, 3:6])
+        print(eta.value)
         
         dataFile, dataText = open("dataFile.csv", 'w'), ""
         for r in range(timeSteps):
