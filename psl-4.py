@@ -14,7 +14,7 @@ def matExp(A,x):        # finds matrix exponential using taylor polynomials, A -
         expMat = expMat + np.linalg.matrix_power(A,i) * x**i/factorial(i)
     return expMat
 
-timeTotal = 50                      # total time of operation (seconds)
+timeTotal = 20                      # total time of operation (seconds)
 timeSteps = int(timeTotal//psl.dt)  # number of time steps, total time divided by size of time step
 dt        = psl.dt                  # time step (seconds)
 
@@ -45,7 +45,7 @@ for k in range(1, timeSteps):
     sLow  = psl.rho_1*exp(-z_0) * (1 - (z_k[k] - z_0) + .5*(z_k[k] - z_0)**2)
     sHigh = psl.rho_2*exp(-z_0) * (1 - (z_k[k] - z_0))
 
-    constraints += [sigma[k] >= cp.norm(eta[k, 0:3]),                                       # thrust magnitude constraint   
+    constraints += [sigma[k] >= cp.norm(eta[k, 0:3]),                                        # thrust magnitude constraint   
                     T_z[k]   >= sigma[k] * cos(psl.theta),                                   # thrust pointing constraint
                     sigma[k] >= sLow,                                                        # lower bound on thrust magnitude
                     sigma[k] <= sHigh,                                                       # upper bound on thrust magnitude
@@ -63,19 +63,19 @@ try:
 
     if str(x_k.value) != "None":
         print(x_k.value[:, 0:3])
-        #print(x_k.value[:, 3:6])
+        print(x_k.value[:, 3:6])
         #print(eta.value)
-        '''
+
         dataFile, dataText = open("dataFile.csv", 'w'), ""
         for r in range(timeSteps):
             for c in range(7):
                 dataText += str(x_k.value[r][c]) + ','
             for c in range(4):
-                dataText += str(eta.value[r + c]) + ','
+                dataText += str(eta.value[r][c]) + ','
             dataText += '\n'
         dataFile.write(dataText)
         dataFile.close()
-        '''
+
     else:
         print("\nNo solution was found.")
      
