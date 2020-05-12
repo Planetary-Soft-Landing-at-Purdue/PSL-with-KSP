@@ -44,13 +44,13 @@ for k in range(1, timeSteps):
     z_0   = log(psl.m_0 - psl.alpha*psl.rho_2 * k*dt)
     sLow  = psl.rho_1*exp(-z_0) * (1 - (z_k[k] - z_0) + .5*(z_k[k] - z_0)**2)
     sHigh = psl.rho_2*exp(-z_0) * (1 - (z_k[k] - z_0))
-    
-    constraints += [sigma[k] >= cp.norm(T_x[k]**2 + T_y[k]**2 + T_z[k]**2),                 # thrust magnitude constraint   
-                    T_z[k]   >= sigma[k] * cos(psl.theta),                                  # thrust pointing constraint
-                    sigma[k] >= sLow,                                                       # lower bound on thrust magnitude
-                    sigma[k] <= sHigh,                                                      # upper bound on thrust magnitude
-                    x_k[k]   == cp.matmul(x_r, x_k[k-1]) + cp.matmul(phi, eta[k-1] + psl.g),# state vector 
-                    cp.SOC( psl.cE @ (x_k[k]-x_N), psl.SE @ (x_k[k]-x_N) )                  # second order cone constraint (glideslope constraint)
+
+    constraints += [sigma[k] >= cp.norm(eta[k, 0:3]),                                       # thrust magnitude constraint   
+                    T_z[k]   >= sigma[k] * cos(psl.theta),                                   # thrust pointing constraint
+                    sigma[k] >= sLow,                                                        # lower bound on thrust magnitude
+                    sigma[k] <= sHigh,                                                       # upper bound on thrust magnitude
+                    x_k[k]   == cp.matmul(x_r, x_k[k-1]) + cp.matmul(phi, eta[k-1] + psl.g), # state vector 
+                    cp.SOC( psl.cE @ (x_k[k]-x_N), psl.SE @ (x_k[k]-x_N) )                   # second order cone constraint (glideslope constraint)
                     ]
 
 print("\nSet up the constraints in %s seconds." % (time.time() - start_time))
@@ -64,8 +64,8 @@ try:
     if str(x_k.value) != "None":
         print(x_k.value[:, 0:3])
         #print(x_k.value[:, 3:6])
-        print(eta.value)
-        
+        #print(eta.value)
+        '''
         dataFile, dataText = open("dataFile.csv", 'w'), ""
         for r in range(timeSteps):
             for c in range(7):
@@ -75,7 +75,7 @@ try:
             dataText += '\n'
         dataFile.write(dataText)
         dataFile.close()
-        
+        '''
     else:
         print("\nNo solution was found.")
      
