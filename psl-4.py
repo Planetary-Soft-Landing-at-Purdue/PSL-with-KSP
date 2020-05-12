@@ -14,7 +14,7 @@ def matExp(A,x):        # finds matrix exponential using taylor polynomials, A -
         expMat = expMat + np.linalg.matrix_power(A,i) * x**i/factorial(i)
     return expMat
 
-timeTotal = 20                      # total time of operation (seconds)
+timeTotal = 79                      # total time of operation (seconds)
 timeSteps = int(timeTotal//psl.dt)  # number of time steps, total time divided by size of time step
 dt        = psl.dt                  # time step (seconds)
 
@@ -24,6 +24,7 @@ z_k           = x_k[:, 6]                            # fuel consumption??
 p_x, p_y, p_z = x_k[:, 1], x_k[:, 2], x_k[:, 0]      # x, y, z components of the position vector
 
 eta = cp.Variable((timeSteps, 4))  # vector with thrust components and sigma, [T_x0, T_y0, T_z0, sigma0, ... T_xN, T_yN, T_zN, sigmaN]
+eta_0 = eta[0, :]
 T_x   = eta[:, 1]
 T_y   = eta[:, 2]
 T_z   = eta[:, 0]
@@ -32,6 +33,7 @@ sigma = eta[:, 3]
 parameters  = cp.sum_squares(x_N[0:3])  # distance from final landing spot (xN, yN) to desired landing spot (0, 0) 
 objective   = cp.Minimize(parameters)   # objective of convex solver is to minimize this distance
 constraints = [x_0      == psl.x_0,                                       # initial state vector
+               eta_0    == psl.eta_0,                                     # initial eta vector
                x_N[3:6] == [0, 0, 0],                                     # final vessel velocity has to be 0
                x_N[6]   >= log(psl.m_0 - psl.alpha*psl.rho_2*timeTotal),  # final z_k constraint
                p_z      >= 0                                              # the vessel has to stay above ground
@@ -62,8 +64,8 @@ try:
     print("\nSolved problem in %s seconds.\n" % (time.time() - start_time))
 
     if str(x_k.value) != "None":
-        print(x_k.value[:, 0:3])
-        print(x_k.value[:, 3:6])
+        #print(x_k.value[:, 0:3])
+        #print(x_k.value[:, 3:6])
         #print(eta.value)
 
         dataFile, dataText = open("dataFile.csv", 'w'), ""
