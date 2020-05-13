@@ -14,7 +14,7 @@ def matExp(A,x):        # finds matrix exponential using taylor polynomials, A -
         expMat = expMat + np.linalg.matrix_power(A,i) * x**i/factorial(i)
     return expMat
 
-timeTotal = 79                      # total time of operation (seconds)
+timeTotal = 100                     # total time of operation (seconds)
 timeSteps = int(timeTotal//psl.dt)  # number of time steps, total time divided by size of time step
 dt        = psl.dt                  # time step (seconds)
 
@@ -30,7 +30,7 @@ T_y   = eta[:, 2]
 T_z   = eta[:, 0]
 sigma = eta[:, 3]
 
-parameters  = cp.sum_squares(x_N[0:3])  # distance from final landing spot (xN, yN) to desired landing spot (0, 0) 
+parameters  = cp.norm(x_N[1:3])         # distance from final landing spot (xN, yN) to desired landing spot (0, 0) 
 objective   = cp.Minimize(parameters)   # objective of convex solver is to minimize this distance
 constraints = [x_0      == psl.x_0,                                       # initial state vector
                eta_0    == psl.eta_0,                                     # initial eta vector
@@ -51,6 +51,7 @@ for k in range(1, timeSteps):
                     T_z[k]   >= sigma[k] * cos(psl.theta),                                   # thrust pointing constraint
                     sigma[k] >= sLow,                                                        # lower bound on thrust magnitude
                     sigma[k] <= sHigh,                                                       # upper bound on thrust magnitude
+                    z_k[k]   <= z_k[k-1],                                                    # fuel cannot increase
                     x_k[k]   == cp.matmul(x_r, x_k[k-1]) + cp.matmul(phi, eta[k-1] + psl.g), # state vector 
                     cp.SOC( psl.cE @ (x_k[k]-x_N), psl.SE @ (x_k[k]-x_N) )                   # second order cone constraint (glideslope constraint)
                     ]
@@ -60,10 +61,11 @@ start_time = time.time()
 prob = cp.Problem(objective, constraints)
 
 try:
-    prob.solve()
-    print("\nSolved problem in %s seconds.\n" % (time.time() - start_time))
+    prob.solve(verbose=True, solver=cp.ECOS, feastol=.005, reltol=4000, abstol=50)
+    print("Solved problem in %s seconds.\n" % (time.time() - start_time))
 
     if str(x_k.value) != "None":
+        print(str(x_k.value[-1, :]), "\n")
         #print(x_k.value[:, 0:3])
         #print(x_k.value[:, 3:6])
         #print(eta.value)
@@ -79,7 +81,7 @@ try:
         dataFile.close()
 
     else:
-        print("\nNo solution was found.")
+        print("No solution was found.\n")
      
 except cp.error.SolverError:
-    print("The ECOS solver failed.")
+    print("The solver failed.\n")
