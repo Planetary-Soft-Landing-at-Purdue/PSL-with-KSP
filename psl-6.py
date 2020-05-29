@@ -1,9 +1,20 @@
 import planetarySoftLanding as psl 
 import ecos, time, math
 import numpy as np  
+import scipy as sp
 from math import tan, pi, exp, cos, log, factorial
+from scipy.sparse import csr_matrix
 
 startTime = time.time()
+
+def writeData(sol):
+    dataFile, dataText = open("dataFile.csv", 'w'), ""
+    for r in range(tSteps):
+        for c in range(r*11, r*11 + 11):
+            dataText += str(sol[c]) + ','
+        dataText += '\n'
+    dataFile.write(dataText)
+    dataFile.close()
 
 def matExp(A,x):        # finds matrix exponential using taylor polynomials, A -> matrix, x -> scalar that A is multiplied by
     expMat = np.zeros_like(A)
@@ -15,28 +26,31 @@ def equalityConstraints(tSteps):
     psi   = matExp( psl.A, psl.dt )                                                                         # matrix that accounts for rotating surface
     phi   = np.trapz([np.dot( matExp(psl.A, tau*.01), psl.B ) for tau in range(100)], axis=0, dx=.01)       # matrix that accounts for effects of control: thrust and gravity
     omega = np.concatenate((psi, phi), axis=1)                                                              # combining these two matrices
-    E = np.concatenate((-omega, np.identity(7), np.zeros((7, 4))), axis=1)                                          
+    D = np.concatenate((np.identity(7), np.zeros((7, 4))), axis=1)                                          
+    E = np.concatenate((-omega, D), axis=1)                                          
 
-    eMat = np.zeros((11 + 7*tSteps, 11*tSteps))                 # main linear equation Ax = b, A := eMat, x := [stateVector eta], b := eVect
-    eMat[0:11, 0:11] = np.identity(11)                          # identity matrix for initial conditions
-    eVect = psl.x_0                                             
-    bVect = np.dot(omega, psl.g)                                # bVect is repeating component of eVect
+    A = np.zeros((11 + 7*tSteps, 11*tSteps))                 # main linear equation Ax = b, A := A, x := [stateVector eta], b := b
+    A[0:11, 0:11] = np.identity(11)                          # identity matrix for initial conditions
+    b = psl.x_0                                             
+    bVect = np.dot(omega, psl.g)                                # bVect is repeating component of b
 
-    for t in range(tSteps-1):                                   # fills in eMat and eVec
-        eMat[11+t*7 : 18+t*7, 11*t : 11*(t+2)] = E
-        eVect = np.concatenate((eVect, bVect), axis=0) 
+    for t in range(tSteps-1):                                   # fills in A and eVec
+        A[11+t*7 : 18+t*7, 11*t : 11*(t+2)] = E
+        b = np.concatenate((b, bVect), axis=0) 
 
-    eMat[5+7*tSteps : 8+7*tSteps, 11*(tSteps-1)+3 : 11*(tSteps-1)+6] = np.identity(3)   # identity matrix for final velocity (set to zero)
-    eMat[4+7*tSteps, 11*(tSteps-1)] = 1                                                 # sets final z-position to zero
+    A[5+7*tSteps : 8+7*tSteps, 11*(tSteps-1)+3 : 11*(tSteps-1)+6] = np.identity(3)   # identity matrix for final velocity (set to zero)
+    A[4+7*tSteps, 11*(tSteps-1)] = 1                                                 # sets final z-position to zero
 
-    eVect = np.concatenate((eVect, np.zeros(7)), axis=0)     
-
-    return eMat, eVect
+    b = np.concatenate((b, np.zeros(7)), axis=0)     
+    
+    return csr_matrix(A), b.astype('float64')
 
 def socConstraints(tSteps):
-    G_main = np.zeros((1, 11*tSteps))
-    h_main = np.zeros(1)
-    
+    G = np.zeros((0, 11*tSteps))
+    h = np.zeros(0)
+    q = []
+    q_k = [4, 2, 3, 3, 1]
+
     thrustMag = np.concatenate(( np.zeros((4, 7)), np.flip( np.identity(4), axis=1 ) ), axis=1)     # isolates thrust components from y_k
     pointCons = np.zeros((2, 11))                                                                   # isolates thrust_z and sigma, used for pointing constraint
     pointCons[0, 10] = cos(psl.theta)
@@ -50,14 +64,14 @@ def socConstraints(tSteps):
         magThr[:, 11*k:11*(k+1)] = thrustMag        
         conPoi[:, 11*k:11*(k+1)] = pointCons
 
-        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * (k//11)*psl.dt)                               # calculated lower bound for mass loss
+        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * k*psl.dt)                                     # calculated lower bound for mass loss
         A  =  e7 * (.5 * psl.rho_1*exp(-z_0))**.5
         bT = -psl.rho_1*exp(-z_0) * (e7 + z_0*e7) - e11
         c  =  psl.rho_1*exp(-z_0) * (1 + z_0 + .5*z_0**2)
-        
+
         low_k, high_k = np.zeros((3, 11*tSteps)), np.zeros((1, 11*tSteps))
 
-        low   = np.concatenate((bT, -bT, -A), axis=0)                                           # lower thrust bound
+        low   = np.concatenate((-bT/2, bT, A), axis=0)                                          # lower thrust bound
         low_h = np.array([.5*(1-c), .5*(1+c), 0])
         low_k[:, 11*k:11*(k+1)] = low
         
@@ -71,28 +85,34 @@ def socConstraints(tSteps):
         gSlope[0][11*(tSteps-1)]                   /= tan(psl.gamma)
         gSlope[0][11*k]                            /= tan(psl.gamma)
 
-        G_main = np.concatenate((G_main, magThr, conPoi, gSlope, low_k, high_k), axis=0)
-        h_main = np.concatenate((h_main, np.zeros(9), low_h, high_h))
+        G = np.concatenate((G, magThr, conPoi, gSlope, low_k, high_k), axis=0)
+        h = np.concatenate((h, np.zeros(9), low_h, high_h))
+        
+        for a in q_k:
+            q.append(a)
     
     finDist   = np.zeros((2, 11*tSteps))
-    finDist_h = np.array([0, 2, 2])
+    finDist_h = np.array([2, 0])
     finDist[:, 11*(tSteps-1) + 1:11*(tSteps-1) + 3] = np.identity(2)
+    q.append(2)
     
-    G_main = np.concatenate((G_main, finDist), axis=0)
-    h_main = np.concatenate((h_main, finDist_h))
-      
-    return -1*G_main, h_main 
-                
-tSteps = 2
-G_main, h_main = socConstraints(tSteps)
-eMat, eVect    = equalityConstraints(tSteps)
+    G = np.concatenate((G, finDist), axis=0)
+    h = np.concatenate((h, finDist_h))
     
-print("This took: ", str(time.time() - startTime))
+    return csr_matrix(-1*G), h, q
 
-G_txt = ''
-for r in range(len(G_main)):
-    for c in G_main[r]:
-        G_txt += ' '*(8-len(str(round(c, 3)))) + str(round(c, 3))
-    G_txt += '  |' + ' '*(8-len(str(round(h_main[r], 3)))) + str(round(h_main[r], 3)) +  '\n'
-txtFile = open("txtFile.txt", 'w')
-txtFile.write(G_txt)
+def setMinFunc(tSteps):
+    c = np.zeros(11*tSteps)
+    c[11*tSteps-4]
+        
+    return c
+            
+tSteps = 80
+G, h, q = socConstraints(tSteps)
+A, b    = equalityConstraints(tSteps)
+c       = setMinFunc(tSteps)
+
+print("Setting up the constraints took: ", str(time.time() - startTime))
+solution = ecos.solve(c, G, h, {'l':0, 'q':q}, A=A, b=b)
+
+writeData(solution['x'])
