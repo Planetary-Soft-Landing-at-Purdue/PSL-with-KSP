@@ -46,57 +46,42 @@ def equalityConstraints(tSteps):
     return csc_matrix(A), b.astype('float64')
 
 def socConstraints(tSteps):
-    G = np.zeros((0, 11*tSteps))
-    h = np.zeros(0)
-    q = []
-    q_k = [4, 2, 3, 3, 1]
-
-    thrustMag = np.concatenate(( np.zeros((4, 7)), np.flip( np.identity(4), axis=1 ) ), axis=1)     # isolates thrust components from y_k
-    pointCons = np.zeros((2, 11))                                                                   # isolates thrust_z and sigma, used for pointing constraint
-    pointCons[0, 10] = cos(psl.theta)
-    pointCons[1, 7]  = 1
+    q_k   = [3, 2, 4, 2, 3]
+    dim_k = sum(q_k)
+    e7, e11, e8 = np.zeros((1, 11)), np.zeros((1, 11)), np.zeros((1, 11))
+    e7[0, 6]   = 1
+    e8[0, 7]   = 1
+    e11[0, 10] = 1
     
-    e7, e11 = np.zeros((1, 11)), np.zeros((1, 11))      # basis vectors e_7 and e_11
-    e7[0, 6], e11[0, 10] = 1, 1
+    G = np.zeros((dim_k*tSteps+3, 11*tSteps))
+    h = np.zeros(dim_k*tSteps+3)
     
-    for k in range(tSteps):
-        magThr, conPoi = np.zeros((4, 11*tSteps)), np.zeros((2, 11*tSteps))                     # magnitude/thrust constraints      
-        magThr[:, 11*k:11*(k+1)] = thrustMag        
-        conPoi[:, 11*k:11*(k+1)] = -pointCons
-
-        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * k*psl.dt)                                     # calculated lower bound for mass loss
+    for k in range(tSteps-1):
+        kRow, kCol = dim_k*k, 11*k
+        
+        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * k*psl.dt)       # values used for thrust bounds
         A  =  e7 * (.5 * psl.rho_1*exp(-z_0))**.5
         bT = -psl.rho_1*exp(-z_0) * (e7 + z_0*e7) - e11
         c  =  psl.rho_1*exp(-z_0) * (1 + z_0 + .5*z_0**2)
-
-        low_k, high_k = np.zeros((3, 11*tSteps)), np.zeros((1, 11*tSteps))
-        low   = np.concatenate((-bT/2, bT, A), axis=0)                                          # lower thrust bound
-        low_h = np.array([.5*(1-c), .5*(1+c), 0])
-        low_k[:, 11*k:11*(k+1)] = low
         
-        high   = e11 + psl.rho_2*exp(-z_0)*e7                                                   # upper thrust bound
-        high_h = np.array([ psl.rho_2*exp(-z_0) * (1+z_0) ])
-        high_k[:, 11*k:11*(k+1)] = high
+        G[kRow:kRow+3, kCol:kCol+11] = np.concatenate((-bT/2, bT, A), axis=0)                       # thrust lower bound
+        h[kRow:kRow+3]               = np.array([.5*(1-c), .5*(1+c), 0])
+        G[kRow+4, kCol:kCol+11] = e11 + psl.rho_2*exp(-z_0)*e7                                      # thrust upper bound
+        h[kRow+3]               = psl.rho_2*exp(-z_0) * (1 + z_0)
         
-        gSlope = np.zeros((3, 11*tSteps))                                                       # glideslope constraints
-        gSlope[:, 11*k:11*k + 3]                    = np.identity(3)
-        gSlope[:, 11*(tSteps-1):11*(tSteps-1) + 3] += -1*np.identity(3)
-        gSlope[0][11*(tSteps-1)]                   /= tan(psl.gamma)
-        gSlope[0][11*k]                            /= tan(psl.gamma)
-
-        G = np.concatenate((G, magThr, conPoi, gSlope, low_k, high_k), axis=0)
-        h = np.concatenate((h, np.zeros(9), low_h, high_h))
-        
+        G[kRow+5, kCol:kCol+11]          = e11              # thrust magnitude
+        G[kRow+6:kRow+9, kCol+7:kCol+10] = np.identity(3)
+        G[kRow+10, kCol:kCol+11] = e8                       # pointing constraint
+        G[kRow+11, kCol:kCol+11] = e11 * cos(psl.theta)
+    
+    G[dim_k*tSteps+1:dim_k*tSteps+3, 11*(tSteps-1)+1:11*(tSteps-1)+3] = np.identity(2)
+    h[dim_k*tSteps] = 2
+    
+    q = []
+    for k in range(tSteps):
         for a in q_k:
             q.append(a)
-    
-    finDist   = np.zeros((3, 11*tSteps))
-    finDist_h = np.array([2, 0, 0])
-    finDist[1:3, 11*(tSteps-1) + 1:11*(tSteps-1) + 3] = np.identity(2)
     q.append(3)
-    
-    G = np.concatenate((G, finDist), axis=0)
-    h = np.concatenate((h, finDist_h))
     
     return csc_matrix(-1*G), h, q
 
@@ -115,3 +100,4 @@ print("Setting up the constraints took: ", str(time.time() - startTime))
 solution = ecos.solve(c, G, h, {'l':0, 'q':q}, A=A, b=b)
 
 writeData(solution['x'])
+
