@@ -142,6 +142,13 @@ def socConstraints(tSteps):
         
         kRow, kCol = l + dim_k*k, 11*k          
         
+        # values and vectors used for thrust bounds
+        
+        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * k*psl.dt)       
+        A  =  e7 * (.5 * psl.rho_1*exp(-z_0))**.5
+        bT = -psl.rho_1*exp(-z_0) * (e7 + z_0*e7) - e11
+        c  =  psl.rho_1*exp(-z_0) * (1 + z_0 + .5*z_0**2)
+        
         # initializing thrust upper bounds and pointing constraints.
         # For pointing constraint, there are no constant values so h 
         # stays as zero
@@ -150,12 +157,7 @@ def socConstraints(tSteps):
         h[k]               = psl.rho_2*exp(-z_0)*(1 + z_0)
         G[tSteps+k, kCol:kCol+11] = e8 - e11 * cos(psl.theta)   
         
-        # values and vectors used for thrust bounds
-        
-        z_0 = log(psl.m_0 - psl.alpha*psl.rho_2 * k*psl.dt)       
-        A  =  e7 * (.5 * psl.rho_1*exp(-z_0))**.5
-        bT = -psl.rho_1*exp(-z_0) * (e7 + z_0*e7) - e11
-        c  =  psl.rho_1*exp(-z_0) * (1 + z_0 + .5*z_0**2)
+        # thrust lower bound constraint
         
         G[kRow:kRow+3, kCol:kCol+11] = np.concatenate((-bT/2, bT/2, A), axis=0)                       
         h[kRow:kRow+3]               = np.array([.5*(1-c), .5*(1+c), 0])
@@ -206,6 +208,6 @@ G, h, q, l = socConstraints(tSteps)
 A, b       = equalityConstraints(tSteps)    
 c          = setMinFunc(tSteps)
 
-solution = ecos.solve(c, G, h, {'l':l, 'q':q}, A=A, b=b, feastol=.1, abstol=.1, reltol=.1)
+solution = ecos.solve(c, G, h, {'l':l, 'q':q}, A=A, b=b, feastol=.05, abstol=.05, reltol=.05)
 
 writeData(solution['x'])
