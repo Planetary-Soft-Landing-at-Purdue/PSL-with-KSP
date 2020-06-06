@@ -13,10 +13,10 @@ m_0 = 1905                      # wet mass
 alpha = 4.53e-4                 # fuel consumption rate kg/N
 rho_1 = 4972                    # lower bound on thrust
 rho_2 = 13260                   # upper bound on thrust
-theta = pi / 2                  # pointing constraint
+theta = 2 * pi / 16             # pointing constraint
 gamma = pi / 3                  # glideslope constraint
   
-x_0 = np.array([4000, 400, -220, 0, 0, 0, np.log(m_0), 0, 0, 0, 0])
+x_0 = np.array([1000, 1000, -2000, 0, 0, 0, np.log(m_0), 0, 0, 0, 0])
 g = np.array([0, 0, 0, 0, 0, 0, 0, -3.7114, 0, 0, 0])
 
 s_W = np.array([[(w[2]**2 + w[1]**2), -1 * w[1] * w[0], -1 * w[2] * w[0], 0, 2 * w[2], -2 * w[1]],
@@ -33,7 +33,7 @@ A = np.concatenate((A, np.zeros((7, 1))), axis=1)
 B = np.concatenate(
     (np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
 B = np.concatenate(
-    (B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T),         axis=1)
+    (B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
 
 
 def writeData(sol, tSteps):
@@ -55,8 +55,8 @@ def matExp(A, x):
 
 
 phi = matExp(A, dt)
-psi = np.trapz([np.dot(matExp(A, tau * .0005 * dt), B)
-                for tau in range(2000)], axis=0, dx=.0005 * dt)
+psi = np.trapz([np.dot(matExp(A, tau * .001 * dt), B)
+                for tau in range(1000)], axis=0, dx=.001 * dt)
 omega = np.concatenate((phi, psi), axis=1)
 E = np.concatenate((-omega, np.identity(7), np.zeros((7, 4))), axis=1)
 
@@ -70,9 +70,7 @@ for r in range(len(E)):
             valList.append(E[r, c])
 
 
-def equalityConstraints(tSteps):
-    startTime = time.time()
-    
+def equalityConstraints(tSteps):  
     n_k, nVals = len(rowList), len(rowList) * tSteps + 16
     A_row, A_col, A_val = np.zeros(nVals), np.zeros(nVals), np.zeros(nVals)
     A_row[0:11], A_col[0:11] = np.linspace(0, 10, 11), np.linspace(0, 10, 11)
@@ -101,14 +99,10 @@ def equalityConstraints(tSteps):
         b[11 + t * 7: 18 + t * 7] = bVect
     b[11:18] = np.zeros(7)
         
-    print("Setting up equality constraints took: ", time.time() - startTime)
-
-    return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps)), b.astype('float64')
+    return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
 
 def socConstraints(tSteps):
-    startTime = time.time()
-
     q_k = [3, 4, 3]
     dim_k = sum(q_k)
     l = 2 * tSteps + 1
@@ -155,48 +149,37 @@ def socConstraints(tSteps):
             G_col.extend(range(nCol, nCol+3))
             G_val.extend([-1/tan(gamma), -1, -1])
         
-    G_row.extend([nRow + 1, nRow + 2])
-    G_col.extend([nCol + 1, nCol + 2])
-    G_val.extend([1, 1])
-    h[l + dim_k * tSteps] = 5
+    G_row.extend([nRow, nRow + 1, nRow + 2])
+    G_col.extend([11 * tSteps, nCol + 1, nCol + 2])
+    G_val.extend([1, 1, 1])
 
     q = []
     for k in range(tSteps):
         for a in q_k:
             q.append(a)
     q.append(3)
-
-    print("Setting up SOC constraints took: ", time.time() - startTime)
     
     G_val = [-g for g in G_val]
     
-    return csc_matrix((G_val, (G_row, G_col)), shape=(l + dim_k * tSteps + 3, 11 * tSteps)), h, q, l
-
-
-def setMinFunc(tSteps):
-    c = np.zeros(11 * tSteps)
-    c[11*(tSteps - 1) + 6] = 0
-
-    return c
+    return csc_matrix((G_val, (G_row, G_col)), shape=(l + dim_k * tSteps + 3, 11 * tSteps + 1)), h, q, l
 
 
 def runEcos(tSteps, getAns=False):
     G, h, q, l = socConstraints(tSteps)
     A_mat, b = equalityConstraints(tSteps)
-    c = setMinFunc(tSteps)
+    c = np.zeros(11 * tSteps + 1)
+    c[-1] = 1
     
-    #solution = ecos.solve(
-    #    c, G, h, {'l': l, 'q': q}, A=A_mat, b=b, feastol=.001, abstol=.001, reltol=.001)
     solution = ecos.solve(
-        c, G, h, {'l': l, 'q': q}, A=A_mat, b=b)
+        c, G, h, {'l': l, 'q': q}, A=A_mat, b=b, verbose=False)
 
     if getAns == False:
         return solution['info']['exitFlag'], -solution['x'][11 * (tSteps - 1) + 6]
     else:
-        return solution['x']
+        return solution
 
 
-if __name__ == "__main__":
+def runGoldenSearch():
     zeta = .618
     tLow = 0
     tHigh = 1500
@@ -206,7 +189,7 @@ if __name__ == "__main__":
     inf_1, f_t1 = runEcos(t1)
     inf_2, f_t2 = runEcos(t2)
     
-    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > 1:
+    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > int(1/dt):
         moveRight = False
 
         if (inf_1 != 0 and inf_1 != 10) or ((inf_2 == 0 or inf_2 == 10) and f_t1 > f_t2):
@@ -232,7 +215,8 @@ if __name__ == "__main__":
     tFinal = int(.5 * float(t1 + t2))
 
     solution = runEcos(tFinal, getAns=True)
-    writeData(solution, tFinal)
+    writeData(solution['x'], tFinal)
     
     print("Total time steps: ", tFinal, "\n")
+    print(solution['info']['exitFlag'])
 
