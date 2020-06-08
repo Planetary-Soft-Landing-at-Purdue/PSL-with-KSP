@@ -5,9 +5,6 @@ from math import tan, pi, exp, cos, log, factorial, sqrt
 from scipy.sparse import csc_matrix
 from numpy import linalg
 
-# here we define constant values. These are global variables that will
-# not change during the descent, with the exception of tFinal and tElapsed.
-
 m_0 = 2000                      # wet mass
 w = [2.53e-5, 0, 6.62e-5]       # planet angular velocity
 theta = pi / 4                  # pointing constraint
@@ -16,7 +13,7 @@ m_f = 300                       # dry mass
 alpha = 2.25e-4                 # fuel consumption rate kg/N
 rho_1 = 4600.0                  # lower bound on thrust
 rho_2 = 14200.0                 # upper bound on thrust
-tFinal = 0                      # final time found after golden
+tFinal = 0                      # final time found after golden searcg
 tElapsed = 0                    # amount of time already elapsed
 
 g = np.array([0, 0, 0, 0, 0, 0, 0, -3.7114, 0, 0, 0])
@@ -46,11 +43,6 @@ def equalityConstraints(tSteps):
     # Creates the equality constraints, Ax = b that will be used in 
     # the ecos solver. Defines state vector at every time step, along 
     # with initial and final conditions.
-    
-    # n_k represents the number of non-zero values per time step,
-    # nVals represents number of non-zero values in A
-    # initializing row, column, and value lists for A
-    # An 11x11 identity matrix is created for defining initial conditions
     
     n_k, nVals = len(rowList), len(rowList) * tSteps + 16
     A_row, A_col, A_val = np.zeros(nVals), np.zeros(nVals), np.zeros(nVals)
@@ -100,13 +92,20 @@ def socConstraints(tSteps, goldSearch):
     # are the exponential cones constraints, and everyting in between are SOC
     # constraints
     
-    q_k = [4, 3]
-    dim_k = sum(q_k)
-    l, e = 2 * tSteps + 1, tSteps
-    nCol, nRow = 11 * (tSteps - 1), l + dim_k * tSteps
-    eRow = nRow + 3
+    # q stores a list of the dimension of each SOC constraint, 
+    # in order. Needed for ecos solver.
     
-    # the matrix G will be initialized as a csc matrix, h is a long vector. 
+    q = [4, 3] * tSteps
+    q.append(3)
+    
+    l = 2 * tSteps + 1          # number of linear inequalities
+    e = tSteps                  # number of exponential cones
+    dim_k = 7                   # number of rows in SOC constraints for one time step
+    nCol  = 11 * (tSteps - 1)   # starting column for last time step
+    nRow  = l + dim_k * tSteps  # starting row for final SOC constraints
+    eRow  = nRow + 3            # starting row for exponetial cone constraints
+    
+    # the matrix G is initialized as a csc matrix, h is a vector. 
     # G_row, G_col, and G_val represent the row index, column index, and scalar
     # value, respectively, of each non-zero element in G. G and h are initially
     # set to the final mass constraint.
@@ -117,19 +116,19 @@ def socConstraints(tSteps, goldSearch):
     h[0] = log(m_f)
     
     for t in range(tSteps):        
-        k, kRow, kCol = t + 1, l + dim_k * t, 11 * t    # kRow, kCol are starting row/column for timestep
-        z_0 = log(m_0 - alpha * rho_2 * t * dt)         # z_0 is used form lower/upper thrust bounds
+        k, kRow, kCol = t + 1, l + dim_k * t, 11 * t     # kRow, kCol are starting row/column for timestep
+        z_0 = log(m_0 - alpha * rho_2 * t * dt)          # z_0 is used form lower/upper thrust bounds
         
-        G_row.extend([k, k])                            # upper thrust constraint
+        G_row.extend([k, k])                             # upper thrust constraint
         G_col.extend([kCol + 6, kCol + 10])
         G_val.extend([-rho_2 * exp(-z_0), -1])
         h[k] = rho_2 * exp(-z_0) * (1 + z_0)
         
-        G_row.extend([tSteps+k, tSteps+k])              # thrust pointing constraint
+        G_row.extend([tSteps+k, tSteps+k])               # thrust pointing constraint
         G_col.extend([kCol + 7, kCol + 10])
         G_val.extend([1, -cos(theta)])
         
-        G_row.extend([kRow, kRow+1, kRow+2, kRow+3])    # thrust magnitude constraint
+        G_row.extend([kRow, kRow+1, kRow+2, kRow+3])     # thrust magnitude constraint
         G_col.extend([kCol+10, kCol+7, kCol+8, kCol+9])
         G_val.extend([1, 1, 1, 1])
         
@@ -161,15 +160,7 @@ def socConstraints(tSteps, goldSearch):
         G_val.extend([1, 1]) 
 
         h[nRow] = finDist
-    
-    # q stores a list of the dimension of each SOC constraint, 
-    # in order. Needed for ecos solver.
-       
-    q = []
-    for t in range(tSteps):
-        q.extend(q_k)
-    q.append(3)
-    
+
     G_val = [-g for g in G_val]     # g matrix has to be negated for ecos solver
     
     return csc_matrix((G_val, (G_row, G_col)), shape=(eRow + 3*tSteps, 11 * tSteps + 1)), h, q, l, e
@@ -209,6 +200,11 @@ def findPath(delta_t, stateVect0, initialSearch=False):
         solution = runEcos(tFinal)
 
 def goldenSearch():
+    # Conducts a golden search to find the optimal descent time. The search
+    # tries to find the descent time that will result in the landing spot
+    # being as close to the origin as possible. Returns distance from origin
+    # and number of time steps.
+    
     global finDist, tFinal
     
     zeta = .618     # golden ratio
@@ -220,7 +216,7 @@ def goldenSearch():
     inf_1, f_t1 = runEcos(t1, goldSearch=True)
     inf_2, f_t2 = runEcos(t2, goldSearch=True)
     
-    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > int(1/dt):
+    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > int(4/dt):
         moveRight = False
 
         # If t1 results in an INFEASABLE solution, or both t1 and t2 result in
@@ -253,20 +249,21 @@ def runEcos(tSteps, goldSearch=False):
     A_mat, b = equalityConstraints(tSteps)                  # find equality constraints
     c = np.zeros(11 * tSteps + 1)                           # initializes function
     
-    if goldSearch:
+    if goldSearch:      
         c[-1] = 1   
         
-        solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
+        solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
+                              verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
         
         finDist = linalg.norm(solution['x'][11 * (tSteps - 1) + 1:11 * (tSteps - 1) + 3])
-        print(solution['info']['exitFlag'])
         return solution['info']['exitFlag'], finDist
     
     else:
         c[11*(tSteps-1) + 6] = -1
 
-        solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
-        print(solution['info']['exitFlag'])
+        solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
+                              verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
+        
         return solution['x']  
 
 def writeData():
@@ -278,7 +275,7 @@ def writeData():
     dataFile.write(dataText)
     dataFile.close()
 
-stateVect0 = np.array([3600, 6000, -1200, 0, 150, 0, np.log(m_0), 0, 0, 0, 0])
+stateVect0 = np.array([6600, 600, -120, 3, -5, 11, np.log(m_0), 0, 0, 0, 0])
 
 findPath(.25, stateVect0, initialSearch=True)
 findPath(.25, stateVect0)
