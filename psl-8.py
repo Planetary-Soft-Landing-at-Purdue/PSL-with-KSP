@@ -178,8 +178,8 @@ def findPath(delta_t, stateVect0, initialSearch=False):
     # the right side of Ax = b for every time step.
     
     phi = matExp(A, dt)
-    psi = np.trapz([np.dot(matExp(A, tau * .001 * dt), B)
-                    for tau in range(1000)], axis=0, dx=.001 * dt)
+    psi = np.trapz([np.dot(matExp(A, tau * .002 * dt), B)
+                    for tau in range(500)], axis=0, dx=.002 * dt)
     omega = np.concatenate((phi, psi), axis=1)
     E = np.concatenate((-omega, np.identity(7), np.zeros((7, 4))), axis=1)
 
@@ -209,14 +209,14 @@ def goldenSearch():
     
     zeta = .618     # golden ratio
     tLow = 0        # starting lower bound on thrust
-    tHigh = 1200    # starting upper bound on thrust
+    tHigh = 2000    # starting upper bound on thrust
 
     t1 = int(tHigh - zeta * (tHigh - tLow))     # initial lower search time
     t2 = int(tLow + zeta * (tHigh - tLow))      # initial upper search time
     inf_1, f_t1 = runEcos(t1, goldSearch=True)
     inf_2, f_t2 = runEcos(t2, goldSearch=True)
     
-    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > int(4/dt):
+    while (inf_1 != 0 and inf_1 != 10) or (inf_2 != 0 and inf_2 != 10) or abs(t1 - t2) > int(1/dt):
         moveRight = False
 
         # If t1 results in an INFEASABLE solution, or both t1 and t2 result in
@@ -241,7 +241,9 @@ def goldenSearch():
 
             inf_2, f_t2 = inf_1, f_t1
             inf_1, f_t1 = runEcos(t1, goldSearch=True)
-                
+        
+        print(t1, inf_1, t2, inf_2)
+              
     tFinal, finDist = t1, f_t1 
         
 def runEcos(tSteps, goldSearch=False):
@@ -253,7 +255,7 @@ def runEcos(tSteps, goldSearch=False):
         c[-1] = 1   
         
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
-                              verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
+                              verbose=False, abstol=.00005, feastol=.00005, reltol=.00005)
         
         finDist = linalg.norm(solution['x'][11 * (tSteps - 1) + 1:11 * (tSteps - 1) + 3])
         return solution['info']['exitFlag'], finDist
@@ -262,7 +264,7 @@ def runEcos(tSteps, goldSearch=False):
         c[11*(tSteps-1) + 6] = -1
 
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
-                              verbose=False, abstol=.0001, feastol=.0001, reltol=.0001)
+                              verbose=False, abstol=.00005, feastol=.00005, reltol=.00005)
         
         return solution['x']  
 
@@ -275,8 +277,25 @@ def writeData():
     dataFile.write(dataText)
     dataFile.close()
 
-stateVect0 = np.array([6600, 600, -120, 3, -5, 11, np.log(m_0), 0, 0, 0, 0])
+stateVect0 = np.array([4500, 600, -120, 123, -5, 11, np.log(m_0), 0, 0, 0, 0])
 
-findPath(.25, stateVect0, initialSearch=True)
-findPath(.25, stateVect0)
+startTime = time.time()
+
+findPath(.1, stateVect0, initialSearch=True)
+findPath(.1, stateVect0)
 writeData()
+
+print("This took: ", time.time() - startTime)
+
+thrustList = []
+for t in range(tFinal):
+    thrustVect = solution[11*t + 7:11*t + 10]
+    thrustMagn = linalg.norm(thrustVect)
+    thrustDire = thrustVect / thrustMagn
+    
+    thrustList.extend(thrustDire)
+    thrustList.append(thrustMagn)
+    
+for t in range(0, len(thrustList), 4):
+    print(thrustList[t:t+4])    
+    
