@@ -5,9 +5,13 @@ from math import tan, pi, exp, cos, log, factorial, sqrt
 from scipy.sparse import csc_matrix
 from numpy import linalg, concatenate
 
-dt = 0
-zeta = .618
-w = [2.53e-5, 0, 6.62e-5]       # planet angular velocity
+# here we define constant values and matrices used throughout the 
+# program. zeta is the golden ratio, w is an array representing 
+# the planet's rotating reference frame, g represent the gravity 
+# vector. A and s_W are matrices used in the ODE equations.
+
+zeta = .618                                             
+w = [2.53e-5, 0, 6.62e-5]                               
 g = np.array([0, 0, 0, 0, 0, 0, 0, -3.7114, 0, 0, 0])
 
 s_W = np.array([[w[2]**2 + w[1]**2, -w[1] * w[0]     , -w[2] * w[0]     , 0        , 2 * w[2] , -2 * w[1]],
@@ -20,6 +24,8 @@ A = concatenate((A, s_W, np.zeros((1, 6))))
 A = concatenate((A, np.zeros((7, 1))), axis=1)
 
 def newVessel(m_f0, rho_10, rho_20, alpha0, gamma0, theta0):
+    # here we define constant values specific to a particular vessel
+    
     global m_f, rho_1, rho_2, alpha, gamma, theta, B
     m_f, rho_1, rho_2, alpha, gamma, theta = m_f0, rho_10, rho_20, alpha0, gamma0, theta0
     
@@ -36,17 +42,20 @@ def matExp(A, x):
         expMat = expMat + np.linalg.matrix_power(A, i) * x**i / factorial(i)
     return expMat
 
-def findPath(delta_t, x_0, initialSearch=False, tWait=None, tDesc=None, tDist=None):   
-    print("Finding path")
+def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=None):   
     global rowList, colList, valList, bVect, dt, omega, m_0
     
-    m_0 = exp(x_0[6])           # initial wet mass   
+    # initial wet mass  
+    m_0 = exp(x_0[6])            
 
-    if delta_t != dt:           # only recalculate E matrix if dt changes
-        print("Finding phi/psi")
-        dt  = delta_t           # dt is the length of time for each time step
+    if initialSearch or delta_t != dt:              
+        dt  = delta_t                               
         
-        phi = matExp(A, dt)
+        # Defines the ODE system used to describe the vessel's motion. This matrix
+        # is defined once, and will be used in the construction of the equality
+        # matrix.
+        
+        phi = matExp(A, dt)                                                 
         psi = np.trapz([np.dot(matExp(A, tau * .002 * dt), B)
                         for tau in range(500)], axis=0, dx=.002 * dt)
         omega = concatenate((phi, psi), axis=1)
@@ -64,27 +73,49 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tDesc=None, tDist=No
         bVect = np.dot(omega, g)
         
     if initialSearch:      
-        return findInitialPath(x_0)                                             # returns solve time from initial path
+        # returns solve time from initial path
+        return findInitialPath(x_0)                                             
     else: 
-        x_s, eta, m_s = x_0, x_0[7:11], m_0                                     # finds the state vector if the vessel waits tWait before    
-        for _ in range(int(tWait / dt)):                                        # starting its descent
+        # finds the state vector and wet mass if the vessel
+        # waits tWait before starting its ignition 
+           
+        x_s, eta, m_s = x_0, x_0[7:11], m_0                                    
+        for _ in range(int(tWait / dt)):                                         
             x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-        m_s -= alpha * rho_2 * (tWait * dt)                                     # wet mass of vessel after waiting tWait
+        m_s -= alpha * rho_2 * (tWait * dt)                                     
         
-        return runEcos(int(tDesc/dt), int(tWait/dt), x_s, m_s, tDist=tDist)     # returns thrust vector with T time steps
-
+        sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, tDist=tDist)      
+        
+        # from the optimized solution found by ecos,
+        # a list is created of the thrust vectors at
+        # every time step.
+        
+        thrustList = []                                                    
+        
+        for t in range(int(tSolve/dt)):                                   
+            thrustVect = sol[11*t + 7:11*t + 10]                       
+            thrustMagn = linalg.norm(thrustVect)                       
+            thrustDire = thrustVect / thrustMagn
+            
+            thrustList.extend(thrustDire)
+            thrustList.append(thrustMagn)
+            
+        return thrustList
+        
 def findInitialPath(x_0):
-    print("Finding initial path")
+    # conducts a golden search to find how much time the vessel
+    # should wait before starting the descent
+    
     tHigh, tLow = 0, 10
     
-    tWait_1 = int(tHigh - zeta * (tHigh - tLow))     # initial lower search time
-    tWait_2 = int(tLow + zeta * (tHigh - tLow))      # initial upper search time
+    tWait_1 = int(tHigh - zeta * (tHigh - tLow))     
+    tWait_2 = int(tLow + zeta * (tHigh - tLow))      
     tDesc_1, f_t1 = goldenSearch(tWait_1, x_0)
     tDesc_2, f_t2 = goldenSearch(tWait_2, x_0)
     
     while abs(tWait_1 - tWait_2) > int(1/dt):
         moveRight = f_t1 > f_t2
-
+        
         if moveRight:
             tLow = tWait_1
             tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
@@ -99,23 +130,31 @@ def findInitialPath(x_0):
             tWait_1 = int(tHigh - zeta * (tHigh - tLow))
             tDesc_1, f_t1 = goldenSearch(tWait_1, x_0)
             
-    return tWait_1 * dt, tDesc_1 * dt, f_t1      # returns wait time, descent time, and max final landing distance
+    # returns wait time, descent time, and max final landing distance        
+    return tWait_1 * dt, tDesc_1 * dt, f_t1      
  
 def goldenSearch(tWait, x_0):
     print("Running golden search")
     
-    x_s, eta, m_s = x_0, x_0[7:11], m_0                         # finds the state vector if the vessel waits tWait before    
-    for _ in range(tWait):                                      # starting its descent
-        x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-    m_s -= alpha * rho_2 * (tWait * dt)                         # wet mass of vessel after waiting tWait
+    # finds the state vector and wet mass if the vessel 
+    # waits tWait before starting its ignition
     
-    tLow = 0                                                    # starting lower bound on time
-    tHigh = (m_s - m_f) / (alpha * rho_2 * dt)                  # starting upper bound on time
+    x_s, eta, m_s = x_0, x_0[7:11], m_0                         
+    for _ in range(tWait):                                      
+        x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
+    m_s -= alpha * rho_2 * (tWait * dt)                         
+    
+    tLow = 0                                                    
+    tHigh = (m_s - m_f) / (alpha * rho_2 * dt)                  
 
-    t1 = int(tHigh - zeta * (tHigh - tLow))                     # initial lower search time
-    t2 = int(tLow + zeta * (tHigh - tLow))                      # initial upper search time
+    t1 = int(tHigh - zeta * (tHigh - tLow))                     
+    t2 = int(tLow + zeta * (tHigh - tLow))                      
     err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
     err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+    
+    # conducts golden search until t1 and t2 both yield optimal solutions, 
+    # and t1 and t2 are one second away from each other. Returns results
+    # of t1.
     
     while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(1/dt):
         moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
@@ -133,27 +172,39 @@ def goldenSearch(tWait, x_0):
             
             t1 = int(tHigh - zeta * (tHigh - tLow))
             err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-        print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')                
+        print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')   
+        
+    # returns descent time and optimal final landing distance             
     return t1, f_t1 
            
-def runEcos(tDesc, tWait, x_s, m_s, goldSearch=False, tDist=None):
-    #print("Running ecos")   
+def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, tDist=None):
+    # find linear, SOC, and exponential inequality constraints     
+    # find equality constraints 
+    # initializes minimization function
     
-    G, h, q, l, e = socConstraints(tDesc, goldSearch, m_s, tDist=tDist)     # find linear, SOC, and exponential inequality constraints  
-    A_mat, b = equalityConstraints(tDesc, x_s)                              # find equality constraints
-    c = np.zeros(11 * tDesc + 1)                                            # initializes function
+    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, tDist=tDist)     
+    A_mat, b = equalityConstraints(tSolve, x_s)                              
+    c = np.zeros(11 * tSolve + 1)                                            
     
-    if goldSearch:      
+    if goldSearch:
+        # optimizes for slack variable, norm of final distance must be
+        # less than or equal to this slack variable. Returns exit flag
+        # (whether the solution was optimal or not) and final landing
+        # distance
+              
         c[-1] = 1   
         
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                               verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
         
-        finDist = linalg.norm(solution['x'][11 * (tDesc - 1) + 1:11 * (tDesc - 1) + 3])
+        finDist = linalg.norm(solution['x'][11 * (tSolve - 1) + 1:11 * (tSolve - 1) + 3])
         return solution['info']['exitFlag'], finDist
     
     else:
-        c[11*(tDesc-1) + 6] = -1
+        # optimizes for maximizing final fuel. Returns the solution found
+        # by ecos
+        
+        c[11*(tSolve-1) + 6] = -1
 
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                               verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
@@ -293,15 +344,17 @@ m_0 = 2000
 
 stateVect0 = np.array([4000, 5300, -4900, 10, -50, 55, np.log(m_0), 0, 0, 0, 0])
 
-tWait, tDesc, tDist = findPath(delta_t, stateVect0, initialSearch=True)
-print(tWait, tDesc, tDist)
+tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)
+print(tWait, tSolve, tDist)
  
-sol = findPath(delta_t, stateVect0, tWait=tWait, tDesc=tDesc, tDist=tDist)
+sol = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 
-dataFile, dataText = open("dataFile.csv", 'w'), ""
-for r in range(len(sol) // 11):
-    for c in range(r * 11, r * 11 + 11):
-        dataText += str(sol[c]) + ','
-    dataText += '\n'
-dataFile.write(dataText)
-dataFile.close()
+'''
+    dataFile, dataText = open("dataFile.csv", 'w'), ""
+    for r in range(len(sol) // 11):
+        for c in range(r * 11, r * 11 + 11):
+            dataText += str(sol[c]) + ','
+        dataText += '\n'
+    dataFile.write(dataText)
+    dataFile.close()
+'''
