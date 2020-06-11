@@ -1,7 +1,7 @@
 import ecos
 import time
 import numpy as np
-from math import tan, pi, exp, cos, log, factorial, sqrt
+from math import tan, pi, exp, cos, log, factorial, sqrt, sin
 from scipy.sparse import csc_matrix
 from numpy import linalg, concatenate
 
@@ -52,8 +52,8 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=N
         dt  = delta_t                               
         
         # Defines the ODE system used to describe the vessel's motion. This matrix
-        # is defined once, and will be used in the construction of the equality
-        # matrix.
+        # is defined once and is the same for every time step This will be used 
+        # in the construction of the equality matrix.
         
         phi = matExp(A, dt)                                                 
         psi = np.trapz([np.dot(matExp(A, tau * .002 * dt), B)
@@ -74,7 +74,8 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=N
         
     if initialSearch:      
         # returns solve time from initial path
-        return findInitialPath(x_0)                                             
+        return findInitialPath(x_0)  
+                                               
     else: 
         # finds the state vector and wet mass if the vessel
         # waits tWait before starting its ignition 
@@ -100,13 +101,13 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=N
             thrustList.extend(thrustDire)
             thrustList.append(thrustMagn)
             
-        return thrustList
+        return sol, thrustList
         
 def findInitialPath(x_0):
     # conducts a golden search to find how much time the vessel
     # should wait before starting the descent
     
-    tHigh, tLow = 0, 10
+    tHigh, tLow = 0, 40
     
     tWait_1 = int(tHigh - zeta * (tHigh - tLow))     
     tWait_2 = int(tLow + zeta * (tHigh - tLow))      
@@ -130,7 +131,7 @@ def findInitialPath(x_0):
             tWait_1 = int(tHigh - zeta * (tHigh - tLow))
             tDesc_1, f_t1 = goldenSearch(tWait_1, x_0)
             
-    # returns wait time, descent time, and max final landing distance        
+    # returns wait time, descent time, and max final landing distance 
     return tWait_1 * dt, tDesc_1 * dt, f_t1      
  
 def goldenSearch(tWait, x_0):
@@ -156,7 +157,7 @@ def goldenSearch(tWait, x_0):
     # and t1 and t2 are one second away from each other. Returns results
     # of t1.
     
-    while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(1/dt):
+    while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
         moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
 
         if moveRight:
@@ -174,7 +175,7 @@ def goldenSearch(tWait, x_0):
             err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
         print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')   
         
-    # returns descent time and optimal final landing distance             
+    # returns descent time and optimal final landing distance 
     return t1, f_t1 
            
 def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, tDist=None):
@@ -211,7 +212,7 @@ def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, tDist=None):
         print("The solution was: ", solution['info']['exitFlag'])
         return solution['x'] 
     
-def equalityConstraints(tSteps, x_s):      
+def equalityConstraints(tSteps, x_s):   
     # Creates the equality constraints, Ax = b that will be used in 
     # the ecos solver. Defines state vector at every time step, along 
     # with initial and final conditions.
@@ -254,7 +255,7 @@ def equalityConstraints(tSteps, x_s):
     for t in range(tSteps - 1):
         b[11 + t * 7: 18 + t * 7] = bVect
     b[11:18] = np.zeros(7)
-        
+
     return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
 def socConstraints(tSteps, goldSearch, m_s, tDist=None):
@@ -298,7 +299,11 @@ def socConstraints(tSteps, goldSearch, m_s, tDist=None):
         
         G_row.extend([tSteps+k, tSteps+k])               # thrust pointing constraint
         G_col.extend([kCol + 7, kCol + 10])
-        G_val.extend([1, -cos(theta)])
+        if tSteps - t >= 10 / dt:
+            G_val.extend([1, -sin(pi/2 - theta)])
+        else:
+            a = 1 - (t % (tSteps - 10 / dt)) / (10 / dt)
+            G_val.extend([1, -sin(pi/2 - a * theta)])
         
         G_row.extend([kRow, kRow+1, kRow+2, kRow+3])     # thrust magnitude constraint
         G_col.extend([kCol+10, kCol+7, kCol+8, kCol+9])
@@ -334,27 +339,34 @@ def socConstraints(tSteps, goldSearch, m_s, tDist=None):
         h[nRow] = tDist * 1.1
 
     G_val = [-g for g in G_val]     # g matrix has to be negated for ecos solver
-    
-    return csc_matrix((G_val, (G_row, G_col)), shape=(eRow + 3*tSteps, 11 * tSteps + 1)), h, q, l, e
- 
-newVessel(300, 4600, 14200, 2.25e-4, pi/6, pi/4)
 
+    return csc_matrix((G_val, (G_row, G_col)), shape=(eRow + 3*tSteps, 11 * tSteps + 1)), h, q, l, e
+
+'''
+    newVessel(dry mass, rho_1, rho_2, alpha, glideslope constraint, pointing constraint)
+    
+    delta_t = length of one time step (seconds)
+    m_0 = initial wet mass, vessel is completely full of fuel (kg)
+    
+    stateVect0 = np.array([position, velocity, ln(m_0), eta])
+    
+    tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
+    sol = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+
+'''
+newVessel(300, 4600, 14200, 2.25e-4, pi/12, pi/4)
 delta_t = .5
 m_0 = 2000
+stateVect0 = np.array([4000, 6000, -6000, 0, -60, 60, np.log(m_0), 0, 0, 0, 0])
 
-stateVect0 = np.array([4000, 5300, -4900, 10, -50, 55, np.log(m_0), 0, 0, 0, 0])
+tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
+sol, thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 
-tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)
-print(tWait, tSolve, tDist)
- 
-sol = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+dataFile, dataText = open("dataFile.csv", 'w'), ""
+for r in range(len(sol) // 11):
+    for c in range(r * 11, r * 11 + 11):
+        dataText += str(sol[c]) + ','
+    dataText += '\n'
+dataFile.write(dataText)
+dataFile.close()
 
-'''
-    dataFile, dataText = open("dataFile.csv", 'w'), ""
-    for r in range(len(sol) // 11):
-        for c in range(r * 11, r * 11 + 11):
-            dataText += str(sol[c]) + ','
-        dataText += '\n'
-    dataFile.write(dataText)
-    dataFile.close()
-'''
