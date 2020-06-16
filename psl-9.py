@@ -10,7 +10,7 @@ from numpy import linalg, concatenate
 # the planet's rotating reference frame, g represent the gravity 
 # vector. A and s_W are matrices used in the ODE equations.
 
-zeta = .5 * (3 + sqrt(5))                                           
+zeta = .5 * (3 - sqrt(5))                                           
 w = [2.53e-5, 0, 6.62e-5]                               
 g = np.array([0, 0, 0, 0, 0, 0, 0, -3.7114, 0, 0, 0])
 
