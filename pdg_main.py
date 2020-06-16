@@ -1,59 +1,64 @@
-from multiprocessing import Process,Value,Lock
+from multiprocessing import Process, Value, Lock
 from config import *
-import krpc,time
+import krpc, time
 
 
 def process_time():
-	#  connect to server, set conn & vessel
-	#  create & start MET stream, run update_met on callback
-	#  wait for termination
-	try:
-		conn = krpc.connect(address='192.168.1.169')
-		vessel = conn.space_center.active_vessel
-		met_stream = conn.add_stream(getattr,vessel,'met')
-		met_stream.add_callback(update_met)
-		met_stream.start()
-		while True: pass
-	#  if connection fails, simulate MET updates
-	except:
-		print('Connection failed, simulating MET')
-		while True:
-			update_met(met.value)
-			time.sleep(0.04)
-			met.value += 0.04
+	global conn, vessel, orbit, body, bcbf
+	global position_stream, velocity_stream, mass_stream, met_stream
+	conn = krpc.connect(address='192.168.1.169')
+	vessel = conn.space_center.active_vessel
+	orbit = vessel.orbit
+	body = orbit.body
+	bcbf = body.reference_frame
 
-def update_met(self):
-	#  update MET and runs callback-synced functions
+	position_stream = conn.add_stream(vessel.position, bcbf)
+	velocity_stream = conn.add_stream(vessel.velocity, bcbf)
+	mass_stream = conn.add_stream(getattr, vessel, 'mass')
+	met_stream = conn.add_stream(getattr, vessel, 'met')
+
+	met_stream.add_callback(timestep)
+
+	position_stream.start()
+	velocity_stream.start()
+	mass_stream.start()
+	met_stream.start()
+	while True: pass
+
+
+def timestep(self):
 	met.value = self
+	update_state()
 	control()
 
+
+def update_state():
+	position = position_stream()
+	velocity = velocity_stream()
+	mass = mass_stream()
+
+
+
 def control():
-	#  send control commands
-	#  if new solution available, reset control elapsed time
 	global cet0
 	if new_eta.value == 1:
 		cet0 = met.value
 		cet = 0
 		new_eta.value = 0
 	cet = met.value-cet0
-	with lock:
-		print('--- cet:',round(cet,3))
+	with lock: print('  CET:', round(cet, 3), 'MET:', round(met.value, 3))
+	
 
-
-def process_guidance():
-	#  initialize guidance, call pdg loop while T > 0
-	#  terminate process_time when finished
-	T = 1
+def process_guid():
+	solvetime = 15
 	while met.value == 0: pass
-	while T > 0:
+	while solvetime > 0:
 		t0 = met.value
-		time.sleep(0.25)
-		dT = met.value-t0
+		time.sleep(1)
+		d_solvetime = met.value-t0
 		with lock:
-			print('GdT:',round(dT,3),';','T:',round(T,2))
-			eta = [T,T]
-			print(eta[:])
-		T -= dT
+			print('GdT:', round(d_solvetime, 3), ';', 'solvetime:', round(solvetime, 2))
+		solvetime -= d_solvetime
 		new_eta.value = 1
 	process_time.terminate()
 
@@ -62,8 +67,8 @@ if __name__ == '__main__':
 
 	lock = Lock()
 
-	process_time = Process(target=process_time,args=(),name='Time')
-	process_guidance = Process(target=process_guidance,args=(),name='Guidance')
+	process_time = Process(target=process_time,args=(),name='TIME')
+	process_guid = Process(target=process_guid,args=(),name='GUID')
 
 	process_time.start()
-	process_guidance.start()
+	process_guid.start()

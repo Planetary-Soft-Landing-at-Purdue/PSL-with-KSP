@@ -7,3 +7,7 @@ new_eta = Value('i')
 new_eta.value = 1
 
 eta = Array('d', 0)
+
+position = Value('d'),Value('d'),Value('d')
+velocity = Value('d'),Value('d'),Value('d')
+mass = Value('d')
