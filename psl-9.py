@@ -23,14 +23,17 @@ A = concatenate((np.zeros((3, 3)), np.identity(3)), axis=1)
 A = concatenate((A, s_W, np.zeros((1, 6))))
 A = concatenate((A, np.zeros((7, 1))), axis=1)
 
-def newVessel(m_f0, rho_10, rho_20, alpha0, gamma0, theta0):
-    # here we define constant values specific to a particular vessel
+# here we define constant values specific to a particular vessel
+
+m_f = 300
+rho_1 = 4600
+rho_2 = 14200
+alpha = 2.25e-4
+gamma = pi/12
+theta = pi/4
     
-    global m_f, rho_1, rho_2, alpha, gamma, theta, B
-    m_f, rho_1, rho_2, alpha, gamma, theta = m_f0, rho_10, rho_20, alpha0, gamma0, theta0
-    
-    B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
-    B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
+B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
+B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
 
 def matExp(A, x):
     # approximates the exponential of a matrix, A, multiplied by a scaler, x
@@ -101,7 +104,7 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=N
             thrustList.extend(thrustDire)
             thrustList.append(thrustMagn)
             
-        return sol, thrustList
+        return thrustList
         
 def findInitialPath(x_0):
     # conducts a golden search to find how much time the vessel
@@ -354,19 +357,12 @@ def socConstraints(tSteps, goldSearch, m_s, tDist=None):
     sol = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 
 '''
-newVessel(300, 4600, 14200, 2.25e-4, pi/12, pi/4)
 delta_t = .5
 m_0 = 2000
 stateVect0 = np.array([4000, 6000, -6000, 0, -60, 60, np.log(m_0), 0, 0, 0, 0])
 
 tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
-sol, thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 
-dataFile, dataText = open("dataFile.csv", 'w'), ""
-for r in range(len(sol) // 11):
-    for c in range(r * 11, r * 11 + 11):
-        dataText += str(sol[c]) + ','
-    dataText += '\n'
-dataFile.write(dataText)
-dataFile.close()
+
 
