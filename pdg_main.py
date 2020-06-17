@@ -1,16 +1,16 @@
 from multiprocessing import Process, Value, Lock
 from config import *
-import krpc, time
-
+import krpc, time, pdg
+import numpy as np
 
 def process_time():
 	global conn, vessel, orbit, body, bcbf
 	global position_stream, velocity_stream, mass_stream, met_stream
-	conn = krpc.connect(address='192.168.1.169')
+	conn = krpc.connect(address='192.168.1.181')
 	vessel = conn.space_center.active_vessel
-	orbit = vessel.orbit
-	body = orbit.body
-	bcbf = body.reference_frame
+
+	#  Create reference frame at launch pad
+	pcpf = 
 
 	position_stream = conn.add_stream(vessel.position, bcbf)
 	velocity_stream = conn.add_stream(vessel.velocity, bcbf)
@@ -33,9 +33,10 @@ def timestep(self):
 
 
 def update_state():
-	position = position_stream()
-	velocity = velocity_stream()
-	mass = mass_stream()
+	with lock:
+		position = position_stream()
+		velocity = velocity_stream()
+		mass = mass_stream()
 
 
 
@@ -50,8 +51,16 @@ def control():
 	
 
 def process_guid():
-	solvetime = 15
+	
+	#  Wait for time counter to begin
 	while met.value == 0: pass
+
+	#  Set initial state
+	state0 = np.array([
+		position[0], position[1], position[2],
+		velocity[0], velocity[1], velocity[2],
+		np.log(mass), 0, 0, 0, 0])
+	tWait, tSolve, tDist = pdg.findPath(pdg.delta_t, state0,)
 	while solvetime > 0:
 		t0 = met.value
 		time.sleep(1)
