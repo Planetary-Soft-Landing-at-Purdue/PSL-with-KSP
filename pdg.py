@@ -358,11 +358,11 @@ def socConstraints(tSteps, goldSearch, m_s, tDist=None):
 
 '''
 delta_t = .5
-m_0 = 82474
-stateVect0 = np.array([100, 100, 100, 0, 0, 0, np.log(m_0), 0, 0, 0, 0])
+# m_0 = 82474
+# stateVect0 = np.array([100, 100, 100, 0, 0, 0, np.log(m_0), 0, 0, 0, 0])
 
-tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
-thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+# tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
+# thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 
 
 
