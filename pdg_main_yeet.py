@@ -4,6 +4,7 @@ import numpy as np
 
 
 def process_time():
+	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 	conn = krpc.connect(address='192.168.1.181')
 	sc = conn.space_center
 	vessel = sc.active_vessel
@@ -17,6 +18,8 @@ def process_time():
 		bcbf,
 		position=vessel.position(bcbf),
 		rotation=vessel.rotation(bcbf))
+
+	input('Press Enter to continue')
 
 	position_stream = conn.add_stream(vessel.position, pcpf)
 	position_stream.add_callback(position_callback)
@@ -45,27 +48,32 @@ def velocity_callback(self): ns.velocity = self
 
 def control():
 	global cet0
+	ns.new_eta = None
+
+	while ns.new_eta == None: pass
 	if ns.new_eta == True:
 		cet0 = ns.met
 		cet = 0
 		ns.new_eta = False
 	cet = ns.met-cet0
 
-	n = 4 * int(cet/pdg.delta_t)
+	n = 4 * int(cet/ns.dt)
 	vessel.auto_pilot.direction = ns.eta[n+2], ns.eta[n], ns.eta[n+1]
 	vessel.control.throttle = ns.eta[n+3]
 
 def process_guid():
 	global tWait, tSolve, tDist, dt
-	dt = 0.5
+	ns.dt = 0.5
+	ns.met = None
 
-	while ns.met == 0: pass
-	tWait, tSolve, dMax = pdg.findPath(dt, state(ns), initialSearch=True)
+
+	while ns.met == None: pass
+	tWait, tSolve, dMax = pdg.PDG(ns.dt, state(ns), initialSearch=True)
 
 	while tSolve > 0:
 		t0 = ns.met
 		x0 = state(ns)
-		ns.eta = pdg.findPath(dt, x0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+		ns.eta = pdg.PDG(ns.dt, x0, tWait=tWait, tSolve=tSolve, tDist=tDist)
 		tSolve -= met.value-t0
 		ns.new_eta = True
 	process_time.terminate()
@@ -74,7 +82,7 @@ def state(ns):
 	return np.array([
 		ns.position[0], ns.position[1], ns.position[2],
 		ns.velocity[0], ns.velocity[1], ns.velocity[2],
-		np.log(ns.mass), 0, 0, 0])
+		np.log(ns.mass), 0, 0, 0, 0])
 
 
 if __name__ == '__main__':
