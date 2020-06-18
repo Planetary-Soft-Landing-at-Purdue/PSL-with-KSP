@@ -30,14 +30,11 @@ B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
 def matExp(A, x):
 
     '''  Taylor polynomial approximation of matrix exponential with scalar multiplication
-
     Parameters:
         A (matrix): array
         x (double): scalar
-
     Returns:
         expMat:     approximate matrix exponential as numpy array 
-
     '''
     
     expMat = np.zeros_like(A)
@@ -45,17 +42,16 @@ def matExp(A, x):
         expMat = expMat + np.linalg.matrix_power(A, i) * x**i / factorial(i)
     return expMat
 
-#  RECOMMEND: RENAME TO "PDG", RENAME "thrustList" TO "eta", RENAME 'tDist' to 'dMax', RENAME 'x_0' to 'x0'
-def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=None):
-    global rowList, colList, valList, bVect, dt, omega, m_0
+def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
+    global rowList, colList, valList, bVect, dt, omega, m0
 
     #  Initial wet mass
-    m_0 = exp(x_0[6])
+    m0 = exp(x0[6])
 
     if initialSearch or delta_t != dt:
         dt  = delta_t
 
-        #  Define matrices used in ODE system for every timestep; also used to construct equality matrix.
+        #  Define matrices used in ODE system for every timestep; used to construct equality matrix.
         phi = matExp(A, dt)
         psi = np.trapz([np.dot(matExp(A, .002*tau*dt), B) for tau in range(500)], axis=0, dx=.002*dt)
         omega = concatenate((phi, psi), axis=1)
@@ -73,56 +69,60 @@ def findPath(delta_t, x_0, initialSearch=False, tWait=None, tSolve=None, tDist=N
 
     if initialSearch:
         # returns solve time from initial path
-        return findInitialPath(x_0)
+        return SCHEDULE_PDG(x0)
 
     else: 
         # finds the state vector and wet mass if the vessel
         # waits tWait before starting its ignition 
            
-        x_s, eta, m_s = x_0, x_0[7:11], m_0                                    
+        x_s, eta, m_s = x0, x0[7:11], m0                                    
         for _ in range(int(tWait / dt)):                                         
             x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
         m_s -= alpha * rho_2 * (tWait * dt)                                     
         
-        sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, tDist=tDist)      
+        sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, dMax=dMax)      
+        
+        dataFile, dataText = open("dataFile.csv", 'w'), ""
+        for r in range(len(sol) // 11):
+            for c in range(r * 11, r * 11 + 11):
+                dataText += str(sol[c]) + ','
+            dataText += '\n'
+        dataFile.write(dataText)
+        dataFile.close()
         
         # from the optimized solution found by ecos,
         # a list is created of the thrust vectors at
         # every time step.
         
-        thrustList = []                                                    
+        eta = []                                                    
         
         for t in range(int(tSolve/dt)):                                   
             thrustVect = sol[11*t + 7:11*t + 10]                       
             thrustMagn = linalg.norm(thrustVect)                       
             thrustDire = thrustVect / thrustMagn
             
-            thrustList.extend(thrustDire)
-            thrustList.append(thrustMagn)
+            eta.extend(thrustDire)
+            eta.append(thrustMagn)
             
-        return thrustList
+        return eta
         
 
-#  RECOMMEND: RENAME TO "SCHEDULE_PDG"
-def findInitialPath(x_0):
+def SCHEDULE_PDG(x0):
 
     ''' Optimizes time to ignition, solvetime, and final landing error bound
-
         Parameters:
-            x_0 (array):    initial state vector at time of call
-
+            x0 (array):         initial state vector at time of call
         Returns:
             tWait (double):     optimal time to ignition, in seconds
             tSolve (double):    optimal solvetime, in seconds
             dMax (double):      optimal maximum landing error
-
     '''
 
-    tHigh, tLow = 0, 40    
+    tHigh, tLow = 0, 0    
     tWait_1 = int(tHigh - zeta * (tHigh - tLow))
     tWait_2 = int(tLow + zeta * (tHigh - tLow))
-    tDesc_1, f_t1 = goldenSearch(tWait_1, x_0)
-    tDesc_2, f_t2 = goldenSearch(tWait_2, x_0)
+    tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
+    tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
     
     while abs(tWait_1 - tWait_2) > int(1/dt):
         moveRight = f_t1 > f_t2
@@ -132,35 +132,32 @@ def findInitialPath(x_0):
             tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
             
             tWait_2 = int(tLow + zeta * (tHigh - tLow))
-            tDesc_2, f_t2 = goldenSearch(tWait_2, x_0)
+            tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
 
         else:
             tHigh = tWait_2
             tWait_2, tDesc_2, f_t2 = tWait_1, tDesc_1, f_t1
             
             tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-            tDesc_1, f_t1 = goldenSearch(tWait_1, x_0)
+            tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
         
     return tWait_1 * dt, tDesc_1 * dt, f_t1      
  
-def goldenSearch(tWait, x_0):
+def goldenSearch(tWait, x0):
 
     ''' Optimizes solvetime and final landing distance.
-
         Parameters:
             tWait (double): time to ignition, in seconds
-            x_0 (array):    initial state vector at time of call
-
+            x0 (array):    initial state vector at time of call
         Returns:
             t1 (double):    optimal solvetime, in seconds
             dOpt (double):  optimal final landing error
-
     '''
 
     # finds the state vector and wet mass if the vessel 
     # waits tWait before starting its ignition
     
-    x_s, eta, m_s = x_0, x_0[7:11], m_0
+    x_s, eta, m_s = x0, x0[7:11], m0
     for _ in range(tWait):
         x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
     m_s -= alpha * rho_2 * (tWait * dt)
@@ -198,26 +195,23 @@ def goldenSearch(tWait, x_0):
     # returns descent time and optimal final landing distance 
     return t1, f_t1 
            
-def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, tDist=None):
+def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
 
     ''' Finds linear, SOC, and exponential inequality constraints,
         then equality constraints, then runs ECOS solver.
-
         Parameters:
             tSolve (double):    PDG solvetime, in seconds
             tWait (double):     time to ignition, in seconds
-            x_s (array?):       unknown ---------------------------------------------------------------------
-            m_s (double?):      unknown ---------------------------------------------------------------------
+            x_s (array):        vessel's state vector at start of scheduled pdg
+            m_s (double):       vessel's mass vector at start of scheduled pdg
             goldSearch (bool):  optimize landing error slack variable or final fuel
-            tDist (double):     unknown ---------------------------------------------------------------------
-
+         dMax (double):         maximum allowable distance from desired landing location
         Returns:
-            solution (?):       unknown ---------------------------------------------------------------------
+            solution :          optimized path for vessel's descent
             finDist (double):   optimized landing error
-
     '''
 
-    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, tDist=tDist)
+    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, dMax)
     A_mat, b = equalityConstraints(tSolve, x_s)
     c = np.zeros(11 * tSolve + 1)
     
@@ -283,7 +277,7 @@ def equalityConstraints(tSteps, x_s):
 
     return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
-def socConstraints(tSteps, goldSearch, m_s, tDist=None):
+def socConstraints(tSteps, goldSearch, m_s, dMax=None):
     # Creates linear, second order cone, and exponential cone constraints used 
     # in the ecos solver. These constraints are of the type, Gx <=_k h. First 
     # 2*tSteps rows in G are linear inequality constraints, the last 3*tSteps rows
@@ -361,29 +355,28 @@ def socConstraints(tSteps, goldSearch, m_s, tDist=None):
         G_col.extend([nCol + 1, nCol + 2])
         G_val.extend([1, 1]) 
 
-        h[nRow] = tDist * 1.1
+        h[nRow] = dMax * 1.1
 
     G_val = [-g for g in G_val]     # g matrix has to be negated for ecos solver
 
     return csc_matrix((G_val, (G_row, G_col)), shape=(eRow + 3*tSteps, 11 * tSteps + 1)), h, q, l, e
 
 '''
-    delta_t = length of one time step (seconds)
-    m_0 = initial wet mass, vessel is completely full of fuel (kg)
-    stateVect0 = np.array([position, velocity, ln(m_0), eta])
-    tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)        
-    sol = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+    delta_t             = length of one time step (seconds)
+    m0                  = initial wet mass, vessel is completely full of fuel (kg)
+    stateVect0          = np.array([position, velocity, ln(m0), eta])
+    tWait, tSolve, dMax = findPath(delta_t, stateVect0, initialSearch=True)        
+    sol                 = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax)
 '''
 
-#  DIFFERENCE BETWEEN DELTA_T AND DT?
 delta_t = .5
-m_0 = 82474
-stateVect0 = np.array([100, 100, 100, 0, 0, 0, np.log(m_0), 0, 0, 0, 0])
+m0 = 82474
+stateVect0 = np.array([6000, 1000, -1000, 0, -74, 32, np.log(m0), 0, 0, 0, 0])
 
-#  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, tDist)
-tWait, tSolve, tDist = findPath(delta_t, stateVect0, initialSearch=True)
+#  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
+tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
 
 #  findPath (returns eta) ==> runEcos
-thrust = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, tDist=tDist)
+thrust = PDG(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax=dMax)
 
 #  PUT VESSELS IN MANAGED NAMESPACES?
