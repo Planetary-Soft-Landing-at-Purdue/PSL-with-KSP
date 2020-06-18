@@ -1,4 +1,4 @@
-from multiprocessing import Process, Manager
+from multiprocessing import Process, Manager, Lock
 import krpc, time, pdg
 import numpy as np
 
@@ -19,7 +19,8 @@ def process_time():
 		position=vessel.position(bcbf),
 		rotation=vessel.rotation(bcbf))
 
-	input('Press Enter to continue')
+	print('Launch!')
+	while vessel.flight().surface_altitude < 250: pass
 
 	position_stream = conn.add_stream(vessel.position, pcpf)
 	position_stream.add_callback(position_callback)
@@ -36,6 +37,7 @@ def process_time():
 	met_stream = conn.add_stream(getattr, vessel, 'met')
 	met_stream.add_callback(met_callback)
 	met_stream.start()
+	time.sleep(0.1)
 
 	while True: pass
 
@@ -48,44 +50,47 @@ def velocity_callback(self): ns.velocity = self
 
 def control():
 	global cet0
-	ns.new_eta = None
-
-	while ns.new_eta == None: pass
+	if ns.new_eta == None: return
 	if ns.new_eta == True:
 		cet0 = ns.met
 		cet = 0
 		ns.new_eta = False
 	cet = ns.met-cet0
+	n = 4 * int(cet/ns.dt) + 4
 
-	n = 4 * int(cet/ns.dt)
-	vessel.auto_pilot.direction = ns.eta[n+2], ns.eta[n], ns.eta[n+1]
-	vessel.control.throttle = ns.eta[n+3]
+	vessel.auto_pilot.engage()
+	vessel.auto_pilot.reference_frame = pcpf
+	vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
+
+	throttle = ns.eta[(n+3)]*ns.mass/pdg.rho_2
+	if throttle < 0.36: vessel.control.throttle = 0.36
+	else: vessel.control.throttle = ns.eta[(n+3)]*ns.mass/pdg.rho_2
 
 def process_guid():
-	global tWait, tSolve, tDist, dt
-	ns.dt = 0.5
+	global tWait, tSolve, dMax, dt
+	ns.dt = 0.1
 	ns.met = None
-
+	ns.new_eta = None
 
 	while ns.met == None: pass
 	tWait, tSolve, dMax = pdg.PDG(ns.dt, state(ns), initialSearch=True)
 
 	while tSolve > 0:
 		t0 = ns.met
-		x0 = state(ns)
-		ns.eta = pdg.PDG(ns.dt, x0, tWait=tWait, tSolve=tSolve, tDist=tDist)
-		tSolve -= met.value-t0
+		ns.eta = pdg.PDG(ns.dt, state(ns), tWait=tWait, tSolve=tSolve, dMax=dMax)
 		ns.new_eta = True
+		tSolve -= ns.met-t0
 	process_time.terminate()
 
 def state(ns):
 	return np.array([
-		ns.position[0], ns.position[1], ns.position[2],
-		ns.velocity[0], ns.velocity[1], ns.velocity[2],
+		ns.position[1], ns.position[0], ns.position[2],
+		ns.velocity[1], ns.velocity[0], ns.velocity[2],
 		np.log(ns.mass), 0, 0, 0, 0])
 
 
 if __name__ == '__main__':
+	lock = Lock()
 	manager = Manager()
 	ns = manager.Namespace()
 	Process_time = Process(target=process_time, name='TIME')
