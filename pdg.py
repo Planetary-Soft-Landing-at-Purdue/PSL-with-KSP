@@ -18,10 +18,10 @@ A = concatenate((A, s_W, np.zeros((1, 6))))
 A = concatenate((A, np.zeros((7, 1))), axis=1)
 
 #  Vessel-specific constants
-m_f = 55386
-rho_1 = 329083
-rho_2 = 914120
-alpha = 3.28e-4
+m_f = 9495
+rho_1 = .00000001
+rho_2 = 936508 * .2
+alpha = 3.46e-4
 gamma = pi/12
 theta = pi/4
 B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
@@ -105,7 +105,6 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
             eta.append(thrustMagn)
             
         return eta
-        
 
 def SCHEDULE_PDG(x0):
 
@@ -190,7 +189,7 @@ def goldenSearch(tWait, x0):
             
             t1 = int(tHigh - zeta * (tHigh - tLow))
             err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-        print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')   
+        print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
         
     # returns descent time and optimal final landing distance 
     return t1, f_t1 
@@ -369,14 +368,15 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
     sol                 = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax)
 '''
 
-delta_t = .5
-m0 = 82474
-stateVect0 = np.array([6000, 1000, -1000, 0, -74, 32, np.log(m0), 0, 0, 0, 0])
+if __name__ == "__main__":
+    delta_t = .5
+    m0 = 17495
+    stateVect0 = np.array([5000, 0, 0, 0, 0, 0, np.log(m0), 0, 0, 0, 0])
+    #[256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 0, 0, 0, 0]
+    #  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
+    tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
 
-#  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
-tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
+    #  findPath (returns eta) ==> runEcos
+    thrust = PDG(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax=dMax)
 
-#  findPath (returns eta) ==> runEcos
-thrust = PDG(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax=dMax)
-
-#  PUT VESSELS IN MANAGED NAMESPACES?
+    #  PUT VESSELS IN MANAGED NAMESPACES?
