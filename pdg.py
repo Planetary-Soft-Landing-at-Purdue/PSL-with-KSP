@@ -7,7 +7,7 @@ from numpy import linalg, concatenate
 #  Constants and matrices used throuhgout PDG
 zeta = 1-.5 * (3-sqrt(5))
 w = [0, 0, 0]
-g = np.array([0, 0, 0, 0, 0, 0, 0, -9.82, 0, 0, 0])
+g = np.array([0, 0, 0, 0, 0, 0, 0, -9.81, 0, 0, 0])
 s_W = np.array([
     [w[2]**2+w[1]**2,   -w[1]*w[0],         -w[2]* w[0]     ,   0,          2*w[2],     -2*w[1]],
     [-w[1]*w[0],        w[2]**2+w[0]**2,    -w[2]*w[1]      ,   -2*w[2],    0,          2*w[0] ],
@@ -19,8 +19,8 @@ A = concatenate((A, np.zeros((7, 1))), axis=1)
 
 #  Vessel-specific constants
 m_f = 9495
-rho_1 = .00000001
-rho_2 = 936508 * .2
+rho_1 = 100
+rho_2 = 936508 * .4
 alpha = 3.46e-4
 gamma = pi/12
 theta = pi/4
@@ -82,14 +82,6 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
         
         sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, dMax=dMax)      
         
-        dataFile, dataText = open("dataFile.csv", 'w'), ""
-        for r in range(len(sol) // 11):
-            for c in range(r * 11, r * 11 + 11):
-                dataText += str(sol[c]) + ','
-            dataText += '\n'
-        dataFile.write(dataText)
-        dataFile.close()
-        
         # from the optimized solution found by ecos,
         # a list is created of the thrust vectors at
         # every time step.
@@ -104,7 +96,7 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
             eta.extend(thrustDire)
             eta.append(thrustMagn)
             
-        return eta
+        return eta, sol
 
 def SCHEDULE_PDG(x0):
 
@@ -161,36 +153,36 @@ def goldenSearch(tWait, x0):
         x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
     m_s -= alpha * rho_2 * (tWait * dt)
     
-    tLow = 0
-    tHigh = (m_s - m_f) / (alpha * rho_2 * dt)
-
-    t1 = int(tHigh - zeta * (tHigh - tLow))
-    t2 = int(tLow + zeta * (tHigh - tLow))
+    tLow = ((m_s - m_f) / (alpha * rho_2 * dt)) 
+    tHigh = ((m_s - m_f) / (alpha * rho_2 * dt)) 
+    t1 = int(tHigh)
+    #t1 = int(tHigh - zeta * (tHigh - tLow))
+    #t2 = int(tLow + zeta * (tHigh - tLow))
     err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-    err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+    #err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
     
     # conducts golden search until t1 and t2 both yield optimal solutions, 
     # and t1 and t2 are one second away from each other. Returns results
     # of t1.
-    
-    while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
-        moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
+    '''
+        while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
+            moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
 
-        if moveRight:
-            tLow = t1
-            t1, err_1, f_t1 = t2, err_2, f_t2 
-            
-            t2 = int(tLow + zeta * (tHigh - tLow))
-            err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+            if moveRight:
+                tLow = t1
+                t1, err_1, f_t1 = t2, err_2, f_t2 
+                
+                t2 = int(tLow + zeta * (tHigh - tLow))
+                err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
 
-        else:
-            tHigh = t2
-            t2, err_2, f_t2 = t1, err_1, f_t1
-            
-            t1 = int(tHigh - zeta * (tHigh - tLow))
-            err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-        print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
-        
+            else:
+                tHigh = t2
+                t2, err_2, f_t2 = t1, err_1, f_t1
+                
+                t1 = int(tHigh - zeta * (tHigh - tLow))
+                err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+            print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
+    '''
     # returns descent time and optimal final landing distance 
     return t1, f_t1 
            
@@ -371,9 +363,9 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
 if __name__ == "__main__":
     delta_t = .5
     m0 = 17495
-    stateVect0 = np.array([5000, 0, 0, 0, 0, 0, np.log(m0), 0, 0, 0, 0])
-    #[256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 0, 0, 0, 0]
+    stateVect0 = np.array([256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 0, 0, 0, 0])
     #  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
+    print("Looking for solution")
     tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
 
     #  findPath (returns eta) ==> runEcos
