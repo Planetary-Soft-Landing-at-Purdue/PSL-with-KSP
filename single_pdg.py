@@ -40,10 +40,10 @@ print("Started all streams")
 print("Starting Launch")
 
 vessel.auto_pilot.sas = True
-vessel.control.throttle = .66
+vessel.control.throttle = .6
 vessel.control.activate_next_stage()
 
-while vessel.flight().surface_altitude < 600: pass
+while vessel.flight().surface_altitude < 800: pass
 
 vessel.control.throttle = 0
 vessel.auto_pilot.sas 	= False
@@ -55,7 +55,7 @@ stateVect = np.array([
 	-velocity_stream()[1], velocity_stream()[0], velocity_stream()[2],
 	np.log(mass_stream()), 0, 0, 0, 0])
 
-dt = 1
+dt = .5
 
 print("Looking for solution")
 tWait, tSolve, dMax = pdg.PDG(dt, stateVect, initialSearch=True)
@@ -75,9 +75,9 @@ realSol = []
 vessel.auto_pilot.engage()
 vessel.auto_pilot.reference_frame = pcpf
 
-while vessel.flight().surface_altitude > 600: pass
+while vessel.flight().surface_altitude > 800: pass
 print("Starting controlled descent")
-startTime, n, tPrev = time.time(), 0, 0
+startTime, n, tPrev = time.time(), 0, -dt
 
 while vessel.flight().surface_altitude > 5 and n < len(eta) - 4:
 	# waits until a there's a new discrete time step before updating the
