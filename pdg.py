@@ -227,7 +227,7 @@ def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
         c[11*(tSolve-1) + 6] = -1
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                               verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
-        print("The solution was: ", solution['info']['exitFlag'])
+        #print("The solution was: ", solution['info']['exitFlag'])
         return solution['x'] 
     
 def equalityConstraints(tSteps, x_s):   
