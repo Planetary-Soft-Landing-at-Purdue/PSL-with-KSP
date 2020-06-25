@@ -6,6 +6,7 @@ def process_time():
 	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 
 	ns.startPDG = False
+	targetHeight = 20
 
 	# makes all necessary connections with ksp
 	conn 	= krpc.connect(address='192.168.0.109')
@@ -38,30 +39,30 @@ def process_time():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 800: pass
+	while position_stream()[1] < 600: pass
 
-	position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
-	ns.stateVect = np.array([
-			 position[1], position[0], position[2],
-			-velocity[1], velocity[0], velocity[2],
-			 np.log(mass), 0, 0, 0, 0])
-
-	ns.startPDG = True
 	vessel.control.throttle = 0
 	vessel.auto_pilot.sas 	= False
 	vessel.auto_pilot.engage()
 	vessel.auto_pilot.reference_frame = pcpf
 
-	# waits until the vessel comes back to the same altitude
-	# at which it cut off its engine
-	while position_stream()[1] > 800: pass
-
 	print("Starting controlled descent")
-	startTime, n, tPrev = time.time(), 0, -ns.dt
+	startTime, n, tPrev, ns.eta = time.time(), 0, -ns.dt, [0, 0, 0, 0]
 
-	while position_stream()[1] > 50:
+	# continuously updates the vessel's thrust until it reaches a certain
+	# altitude above its target landing spot
+	while ns.new_eta == None or position_stream()[1] > targetHeight:
 		# waits until a new eta has been found
+		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
+		ns.stateVect = np.array([
+			 position[1] - targetHeight, position[0], position[2],
+			 velocity[1]		       , velocity[0], velocity[2],
+			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
+		ns.startPDG = True
+
 		while ns.new_eta == None: pass 
+		# updates current state vector
+		
 		if ns.new_eta == True:
 			ns.new_eta = False
 			startTime, n, tPrev = time.time(), 0, -ns.dt
@@ -73,42 +74,36 @@ def process_time():
 		vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
 		vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / pdg.rho_2)
 
-		# updates current state vector
-		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
-		ns.stateVect = np.array([
-			 position[1], position[0], position[2],
-			 velocity[1], velocity[0], velocity[2],
-			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
-
+	ns.startPDG = False
+	
 	print("Starting vertical descent")
-
+	# as a positive thrust until the vessel's vertical velocity is zero
 	vessel.auto_pilot.target_direction = 0, 1, 0
-	vessel.control.throttle 		   = .5 * 9.81 * (mass_stream() / pdg.rho_2)
-	time.sleep(1)
-
-	while position_stream()[1] > 5:
-		vessel.auto_pilot.target_direction = 0, 1, 0
-		vessel.control.throttle 		   = .95 * 9.81 * (mass_stream() / pdg.rho_2)
-
-	print("Cutting engines")
+	while velocity_stream()[1] < 0: 
+		vessel.control.throttle = 2 * 9.81 * (mass_stream() / pdg.rho_2)		
+	# has a positive thrust slightly less than gravity until it lands
+	while position_stream()[1] > 2:
+		vessel.control.throttle = .90 * 9.81 * (mass_stream() / pdg.rho_2)		
+	
 	vessel.control.throttle = 0
 
 def process_guid():
 	global tWait, tSolve, dMax, dt
 
-	ns.dt 		 = .75
+	ns.dt 		 = .5
 	ns.new_eta 	 = None
 
 	while ns.startPDG == False: pass
 
-	while True:
+	while ns.startPDG:
 		tWait, tSolve, dMax = pdg.PDG(ns.dt, ns.stateVect, initialSearch=True)
-		ns.eta, _   = pdg.PDG(ns.dt, ns.stateVect, tWait=tWait, tSolve=tSolve, dMax=dMax)
-		ns.new_eta 	= True
-		print("Found new solution")
+		if int(tSolve / ns.dt) > 5:
+			ns.eta, _   = pdg.PDG(ns.dt, ns.stateVect, tWait=tWait, tSolve=tSolve, dMax=dMax)
+			print("Found solution")
+			ns.new_eta 	= True
 		time.sleep(5)
 
-	process_time.terminate()
+	#process_time.terminate()
 
 if __name__ == '__main__':
 	lock = Lock()
