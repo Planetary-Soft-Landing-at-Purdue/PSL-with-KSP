@@ -80,22 +80,23 @@ def process_time():
 	print("Stabilizing horizontal velocities")
 	prop = .15
 	while position_stream()[1] > 5 and (abs(velocity_stream()[0]) > .1 or abs(velocity_stream()[2]) > .1):
-		dx, dz, dy 			= velocity_stream()[0], velocity_stream()[1], velocity_stream()[2]
-		dir_x, dir_z, dir_y	= -prop * dx, -dz, -prop * dy
+		dx, dz, dy = velocity_stream()[0], velocity_stream()[1], velocity_stream()[2]
+		dx, dz, dy = -prop * dx, -dz, -prop * dy
 
-		if (dir_x**2 + dir_y**2)**.5 / dir_z > math.tan(pdg.theta):
-			dir_z = (dir_x**2 + dir_y**2)**.5 / math.tan(pdg.theta)
+		# if the thrust pointing angle exceeds pointing contraints angle, set
+		# thrust angle to max allowable thrust pointing angle
+		if (dx**2 + dy**2)**.5 / dz > math.tan(pdg.theta):
+			dz = (dx**2 + dy**2)**.5 / math.tan(pdg.theta)
 
-		dir_mag	= (dir_x**2 + dir_z**2 + dir_y**2) ** .5 
-
-		vessel.auto_pilot.target_direction 	= (dir_x / dir_mag), (dir_z / dir_mag), (dir_y / dir_mag)
+		vessel.auto_pilot.target_direction 	= dx, dz, dy
 		vessel.control.throttle 			= 9.81 * (mass_stream() / pdg.rho_2)	
 
 	# makes a positive thrust until the vessel's vertical velocity is zero
 	print("Starting vertical descent")
 	vessel.auto_pilot.target_direction = 0, 1, 0
 	while velocity_stream()[1] < -1.0: 
-		vessel.control.throttle = 2 * 9.81 * (mass_stream() / pdg.rho_2)		
+		vessel.control.throttle = 2.0 * 9.81 * (mass_stream() / pdg.rho_2)	
+			
 	# has a positive thrust slightly less than gravity until it lands
 	vessel.control.throttle = .7 * 9.81 * (mass_stream() / pdg.rho_2)		
 	time.sleep(1)
