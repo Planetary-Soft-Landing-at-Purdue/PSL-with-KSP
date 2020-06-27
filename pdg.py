@@ -19,10 +19,10 @@ A = concatenate((A, np.zeros((7, 1))), axis=1)
 
 #  Vessel-specific constants
 m_f = 9495
-rho_1 = 100
+rho_1 = 936508 * .1
 rho_2 = 936508 * .4
 alpha = 3.46e-4
-gamma = pi/3
+gamma = pi/6
 theta = pi/4
 B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
 B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
@@ -42,7 +42,7 @@ def matExp(A, x):
         expMat = expMat + np.linalg.matrix_power(A, i) * x**i / factorial(i)
     return expMat
 
-def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
+def PDG(delta_t, x0, initialSearch=False, minDistance=False, tWait=None, tSolve=None, dMax=None):
     global rowList, colList, valList, bVect, dt, omega, m0
 
     #  Initial wet mass
@@ -67,20 +67,13 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
         
         bVect = np.dot(omega, g)
 
-    if initialSearch:
-        # returns solve time from initial path
-        return SCHEDULE_PDG(x0)
+    # returns wait time before engine ignition
+    if initialSearch: return SCHEDULE_PDG(x0)
+    # returns minimum landing distance
+    elif minDistance: return goldenSearch(0, x0)
 
-    else: 
-        # finds the state vector and wet mass if the vessel
-        # waits tWait before starting its ignition 
-           
-        x_s, eta, m_s = x0, x0[7:11], m0                                    
-        for _ in range(int(tWait / dt)):                                         
-            x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-        m_s -= alpha * rho_2 * (tWait * dt)                                     
-        
-        sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, dMax=dMax)      
+    else:                               
+        sol = runEcos(int(tSolve/dt), int(tWait/dt), x0, m0, dMax=dMax)      
         
         # from the optimized solution found by ecos,
         # a list is created of the thrust vectors at
@@ -109,30 +102,29 @@ def SCHEDULE_PDG(x0):
             dMax (double):      optimal maximum landing error
     '''
 
-    tHigh, tLow = 0, 0    
-    tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-    #tWait_2 = int(tLow + zeta * (tHigh - tLow))
-    tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-    #tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
-    '''
-        while abs(tWait_1 - tWait_2) > int(1/dt):
-            moveRight = f_t1 > f_t2
-            
-            if moveRight:
-                tLow = tWait_1
-                tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
-                
-                tWait_2 = int(tLow + zeta * (tHigh - tLow))
-                tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
+    tLow, tHigh = 0, sqrt(2 * x0[0] / -g[7]) / dt
 
-            else:
-                tHigh = tWait_2
-                tWait_2, tDesc_2, f_t2 = tWait_1, tDesc_1, f_t1
-                
-                tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-                tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-    '''   
-    return tWait_1 * dt, tDesc_1 * dt, f_t1      
+    tWait_1 = int(tHigh - zeta * (tHigh - tLow))
+    tWait_2 = int(tLow + zeta * (tHigh - tLow))
+    t1, finDist_1 = goldenSearch(tWait_1, x0)
+    t2, finDist_2 = goldenSearch(tWait_2, x0)
+    
+    while abs(tWait_1 - tWait_2) > int(1/dt):       
+        if finDist_1 == None or (finDist_2 != None and finDist_1 > finDist_2):
+            tLow = tWait_1
+            tWait_1, t1, finDist_1 = tWait_2, t2, finDist_2
+            
+            tWait_2       = int(tLow + zeta * (tHigh - tLow))
+            t2, finDist_2 = goldenSearch(tWait_2, x0)
+
+        else:
+            tHigh = tWait_2
+            tWait_2, t2, finDist_2 = tWait_1, t1, finDist_1
+            
+            tWait_1       = int(tHigh - zeta * (tHigh - tLow))
+            t1, finDist_1 = goldenSearch(tWait_1, x0)
+    
+    return tWait_2 * dt    
  
 def goldenSearch(tWait, x0):
 
@@ -151,40 +143,42 @@ def goldenSearch(tWait, x0):
     x_s, eta, m_s = x0, x0[7:11], m0
     for _ in range(tWait):
         x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-    m_s -= alpha * rho_2 * (tWait * dt)
+    m_s = np.exp(x_s[6])                                  
     
     tHigh = ((m_s - m_f) / (alpha * rho_2 * dt)) 
-    tLow = tHigh / 2
+    tLow  = 0
     
     t1 = int(tHigh - zeta * (tHigh - tLow))
     t2 = int(tLow + zeta * (tHigh - tLow))
-    err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-    err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+    err_1, finDist_1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+    err_2, finDist_2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
     
     # conducts golden search until t1 and t2 both yield optimal solutions, 
     # and t1 and t2 are one second away from each other. Returns results
     # of t1.
     
-    while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
-        moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
+    while err_1 != 0 or err_2 != 0 or abs(t1 - t2) > int(1/dt):
 
-        if moveRight:
+        if err_1 != 0 or (err_2 == 0 and finDist_1 > finDist_2):
             tLow = t1
-            t1, err_1, f_t1 = t2, err_2, f_t2 
+            t1, err_1, finDist_1 = t2, err_2, finDist_2 
             
             t2 = int(tLow + zeta * (tHigh - tLow))
-            err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+            err_2, finDist_2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
 
         else:
             tHigh = t2
-            t2, err_2, f_t2 = t1, err_1, f_t1
+            t2, err_2, finDist_2 = t1, err_1, finDist_1
             
             t1 = int(tHigh - zeta * (tHigh - tLow))
-            err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-        #print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
+            err_1, finDist_1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+        #print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', finDist_1, finDist_2, '  ')
+
+        if err_2 != 0 and abs(t1 - t2) < int(1/dt):
+            return None, None
 
     # returns descent time and optimal final landing distance 
-    return t1, f_t1 
+    return t2, finDist_2
            
 def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
 
@@ -309,11 +303,7 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
         
         G_row.extend([tSteps+k, tSteps+k])               # thrust pointing constraint
         G_col.extend([kCol + 7, kCol + 10])
-        if tSteps - t >= 10 / dt:
-            G_val.extend([1, -sin(pi/2 - theta)])
-        else:
-            a = 1 - (t % (tSteps - 10 / dt)) / (10 / dt)
-            G_val.extend([1, -sin(pi/2 - a * theta)])
+        G_val.extend([1, -sin(pi/2 - theta)])
         
         G_row.extend([kRow, kRow+1, kRow+2, kRow+3])     # thrust magnitude constraint
         G_col.extend([kCol+10, kCol+7, kCol+8, kCol+9])
