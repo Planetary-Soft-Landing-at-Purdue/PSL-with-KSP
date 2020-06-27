@@ -6,7 +6,7 @@ from numpy import linalg, concatenate
 
 #  Constants and matrices used throuhgout PDG
 zeta = 1-.5 * (3-sqrt(5))
-w = [0, 0, 0]
+w = [-7.292e-5, 0, 0]
 g = np.array([0, 0, 0, 0, 0, 0, 0, -9.81, 0, 0, 0])
 s_W = np.array([
     [w[2]**2+w[1]**2,   -w[1]*w[0],         -w[2]* w[0]     ,   0,          2*w[2],     -2*w[1]],
@@ -22,7 +22,7 @@ m_f = 9495
 rho_1 = 100
 rho_2 = 936508 * .4
 alpha = 3.46e-4
-gamma = pi/12
+gamma = pi/3
 theta = pi/4
 B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
 B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
@@ -90,8 +90,8 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
         
         for t in range(int(tSolve/dt)):                                   
             thrustVect = sol[11*t + 7:11*t + 10]                       
-            thrustMagn = linalg.norm(thrustVect)                       
-            thrustDire = thrustVect / thrustMagn
+            thrustMagn = linalg.norm(thrustVect)
+            thrustDire = thrustVect / (thrustMagn + .0000001)
             
             eta.extend(thrustDire)
             eta.append(thrustMagn)
@@ -111,27 +111,27 @@ def SCHEDULE_PDG(x0):
 
     tHigh, tLow = 0, 0    
     tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-    tWait_2 = int(tLow + zeta * (tHigh - tLow))
+    #tWait_2 = int(tLow + zeta * (tHigh - tLow))
     tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-    tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
-    
-    while abs(tWait_1 - tWait_2) > int(1/dt):
-        moveRight = f_t1 > f_t2
-        
-        if moveRight:
-            tLow = tWait_1
-            tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
+    #tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
+    '''
+        while abs(tWait_1 - tWait_2) > int(1/dt):
+            moveRight = f_t1 > f_t2
             
-            tWait_2 = int(tLow + zeta * (tHigh - tLow))
-            tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
+            if moveRight:
+                tLow = tWait_1
+                tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
+                
+                tWait_2 = int(tLow + zeta * (tHigh - tLow))
+                tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
 
-        else:
-            tHigh = tWait_2
-            tWait_2, tDesc_2, f_t2 = tWait_1, tDesc_1, f_t1
-            
-            tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-            tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-        
+            else:
+                tHigh = tWait_2
+                tWait_2, tDesc_2, f_t2 = tWait_1, tDesc_1, f_t1
+                
+                tWait_1 = int(tHigh - zeta * (tHigh - tLow))
+                tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
+    '''   
     return tWait_1 * dt, tDesc_1 * dt, f_t1      
  
 def goldenSearch(tWait, x0):
@@ -153,36 +153,36 @@ def goldenSearch(tWait, x0):
         x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
     m_s -= alpha * rho_2 * (tWait * dt)
     
-    tLow = ((m_s - m_f) / (alpha * rho_2 * dt)) 
     tHigh = ((m_s - m_f) / (alpha * rho_2 * dt)) 
-    t1 = int(tHigh)
-    #t1 = int(tHigh - zeta * (tHigh - tLow))
-    #t2 = int(tLow + zeta * (tHigh - tLow))
+    tLow = tHigh / 2
+    
+    t1 = int(tHigh - zeta * (tHigh - tLow))
+    t2 = int(tLow + zeta * (tHigh - tLow))
     err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-    #err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+    err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
     
     # conducts golden search until t1 and t2 both yield optimal solutions, 
     # and t1 and t2 are one second away from each other. Returns results
     # of t1.
-    '''
-        while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
-            moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
+    
+    while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
+        moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
 
-            if moveRight:
-                tLow = t1
-                t1, err_1, f_t1 = t2, err_2, f_t2 
-                
-                t2 = int(tLow + zeta * (tHigh - tLow))
-                err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+        if moveRight:
+            tLow = t1
+            t1, err_1, f_t1 = t2, err_2, f_t2 
+            
+            t2 = int(tLow + zeta * (tHigh - tLow))
+            err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
 
-            else:
-                tHigh = t2
-                t2, err_2, f_t2 = t1, err_1, f_t1
-                
-                t1 = int(tHigh - zeta * (tHigh - tLow))
-                err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-            print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
-    '''
+        else:
+            tHigh = t2
+            t2, err_2, f_t2 = t1, err_1, f_t1
+            
+            t1 = int(tHigh - zeta * (tHigh - tLow))
+            err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+        #print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
+
     # returns descent time and optimal final landing distance 
     return t1, f_t1 
            
@@ -363,7 +363,7 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
 if __name__ == "__main__":
     delta_t = .5
     m0 = 17495
-    stateVect0 = np.array([256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 0, 0, 0, 0])
+    stateVect0 = np.array([256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 13, 2, 1, 15])
     #  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
     print("Looking for solution")
     tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
