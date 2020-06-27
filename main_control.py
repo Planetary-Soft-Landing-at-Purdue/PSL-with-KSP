@@ -41,7 +41,7 @@ def process_time():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 400: pass
+	while position_stream()[1] < 2500: pass
 
 	vessel.control.throttle = 0
 	vessel.auto_pilot.sas 	= False
@@ -54,7 +54,7 @@ def process_time():
 	# continuously updates the vessel's thrust until it reaches a certain
 	# altitude above its target landing spot
 	while ns.new_eta == None or position_stream()[1] > targetHeight + 10:
-		# waits until a new eta has been found
+		# updates current state vector
 		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
 		ns.stateVect = np.array([
 			 position[1] - targetHeight, position[0], position[2],
@@ -62,19 +62,23 @@ def process_time():
 			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
 		ns.startPDG = True
 
-		while ns.new_eta == None: vessel.control.throttle = .01
-		# updates current state vector
-		
-		if ns.new_eta == True:
-			ns.new_eta = False
-			startTime, n, tPrev = time.time(), 0, -ns.dt
-		# waits until a there's a new discrete time step before updating the
-		# vessel's thrust
-		while int((time.time() - startTime) / ns.dt) == tPrev: pass
-		n, tPrev = n + 4, int((time.time() - startTime) / ns.dt)
+		# waits until a new eta has been found
+		if ns.new_eta == None: 
+			vessel.control.throttle = .01
+			time.sleep(ns.dt)
 
-		vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
-		vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / pdg.rho_2)
+		else:
+			if ns.new_eta == True:
+				ns.new_eta = False
+				startTime, n, tPrev = time.time(), 0, -ns.dt
+
+			# waits until a there's a new discrete time step before updating the
+			# vessel's thrust
+			while int((time.time() - startTime) / ns.dt) == tPrev: pass
+			n, tPrev = n + 4, int((time.time() - startTime) / ns.dt)
+
+			vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
+			vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / pdg.rho_2)
 
 	ns.startPDG = False
 	veriticalStable = False
@@ -82,6 +86,8 @@ def process_time():
 	print("Stabilizing horizontal velocities")
 	prop = .04
 	while position_stream()[1] > 2:
+		# thrust in x and y directions is proportional to the vessel's velocity
+		# in those directions
 		dx, dy 		= -prop * velocity_stream()[0], -prop * velocity_stream()[2]
 		thrustAngle = math.atan((dx**2 + dy**2) ** .5)
 
@@ -106,16 +112,17 @@ def process_guid():
 	while ns.startPDG == False: pass
 
 	timeWait = pdg.PDG(ns.dt, ns.stateVect, initialSearch=True)
-	print("Will wait ", timeWait, "seconds before starting pdg")
+	print("Will wait", timeWait, "seconds before starting pdg")
 	time.sleep(timeWait)
+	print("Stopped waiting")
 
 	while ns.startPDG:
 		tSolve, dMax = pdg.PDG(ns.dt, ns.stateVect, minDistance=True)
-		if int(tSolve / ns.dt) > 5:
+		if tSolve != None and int(tSolve / ns.dt) > 5:
 			ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tWait=timeWait, tSolve=tSolve, dMax=dMax)
 			print("Found new solution")
 			ns.new_eta = True
-		time.sleep(4)
+		time.sleep(5)
 
 	#process_time.terminate()
 
