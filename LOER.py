@@ -4,9 +4,12 @@ from math import tan, pi, exp, cos, log, factorial, sqrt, sin
 import scipy
 
 
-totalTime = 100
-dt=0.1
-timeSteps=int(totalTime/dt)
+def E(r,v):
+    return 1/r-0.5*v**2
+e_0=E(1e5, 2e3)
+e_f = E(2e3,200)
+
+eSteps=abs(int(e_f/1000))
 p_s=1.01325e5
 rho_s=1.2250
 g_0=9.81
@@ -45,5 +48,5 @@ def gay(y,e, Omega, sigma, m, A):
           ]
     return dyde
 
-t=np.linspace(0,totalTime, timeSteps)
+t=np.linspace(e_0,e_f, eSteps)
 y0=[1e5,0,0,0,0]
