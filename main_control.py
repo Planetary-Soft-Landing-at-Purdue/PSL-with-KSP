@@ -6,7 +6,7 @@ def process_time():
 	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 
 	ns.startPDG = False
-	targetHeight = 20
+	targetHeight = 2
 
 	# makes all necessary connections with ksp
 	conn 	= krpc.connect(address='192.168.0.109')
@@ -41,7 +41,7 @@ def process_time():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 2500: pass
+	while position_stream()[1] < 600: pass
 
 	vessel.control.throttle = 0
 	vessel.auto_pilot.sas 	= False
@@ -53,12 +53,12 @@ def process_time():
 
 	# continuously updates the vessel's thrust until it reaches a certain
 	# altitude above its target landing spot
-	while ns.new_eta == None or position_stream()[1] > targetHeight + 10:
+	while ns.new_eta == None or position_stream()[1] > 2 + targetHeight:
 		# updates current state vector
 		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
 		ns.stateVect = np.array([
 			 position[1] - targetHeight, position[0], position[2],
-			 velocity[1]		       , velocity[0], velocity[2],
+			 velocity[1]               , velocity[0], velocity[2],
 			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
 		ns.startPDG = True
 
@@ -81,32 +81,12 @@ def process_time():
 			vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / pdg.rho_2)
 
 	ns.startPDG = False
-	veriticalStable = False
-	# makes thrust in opposite direction of horizontal velo until horizontal velo reaches 0
-	print("Stabilizing horizontal velocities")
-	prop = .04
-	while position_stream()[1] > 2:
-		# thrust in x and y directions is proportional to the vessel's velocity
-		# in those directions
-		dx, dy 		= -prop * velocity_stream()[0], -prop * velocity_stream()[2]
-		thrustAngle = math.atan((dx**2 + dy**2) ** .5)
-
-		vessel.auto_pilot.target_direction = dx, 1, dy
-		if veriticalStable == False:
-			vessel.control.throttle = 1.5 * (9.81 / math.cos(thrustAngle)) * (mass_stream() / pdg.rho_2)	
-		else:
-			vessel.control.throttle = .9 * (9.81 / math.cos(thrustAngle)) * (mass_stream() / pdg.rho_2)	
-
-		if veriticalStable == False and velocity_stream()[1] > -1.0:
-			print("Starting vertical descent")
-			veriticalStable = True
-		
 	vessel.control.throttle = 0
 
 def process_guid():
 	global tWait, tSolve, dMax, dt
 
-	ns.dt 		 = .5
+	ns.dt 		 = 1
 	ns.new_eta 	 = None
 
 	while ns.startPDG == False: pass
@@ -116,13 +96,23 @@ def process_guid():
 	time.sleep(timeWait)
 	print("Stopped waiting")
 
-	while ns.startPDG:
-		tSolve, dMax = pdg.PDG(ns.dt, ns.stateVect, minDistance=True)
-		if tSolve != None and int(tSolve / ns.dt) > 5:
-			ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tWait=timeWait, tSolve=tSolve, dMax=dMax)
-			print("Found new solution")
-			ns.new_eta = True
-		time.sleep(5)
+	ns.dt 		    = .2
+	tSolve, dMax, _ = pdg.PDG(ns.dt, ns.stateVect, minDistance=True)
+	tSolveTotal     = tSolve
+
+	while ns.startPDG and tSolve > 0:
+		startTime = time.time()
+
+		ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tWait=timeWait, tSolve=tSolve, dMax=dMax)
+		print("Found new solution", tSolve)
+		ns.new_eta = True
+
+		time.sleep(2)
+		tSolve -= time.time() - startTime
+	
+		if tSolve < tSolveTotal / 2 : ns.dt = .1
+		if tSolve < tSolveTotal / 4 : ns.dt = .05
+		if tSolve < tSolveTotal / 8: ns.dt = .02
 
 	#process_time.terminate()
 
@@ -139,5 +129,4 @@ if __name__ == '__main__':
 	Process_guid.start()
 	Process_time.join()
 	Process_guid.join()
-
 
