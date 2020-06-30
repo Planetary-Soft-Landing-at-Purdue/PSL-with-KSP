@@ -2,12 +2,17 @@ import time
 import numpy as np
 from math import tan, pi, exp, cos, log, factorial, sqrt, sin
 import scipy
+from scipy.integrate import odeint
 
 
 def E(r,v):
     return 1/r-0.5*v**2
-e_0=E(1e5, 2e3)
-e_f = E(2e3,200)
+r_0=1e5
+v_0=2e3
+e_0=E(r_0, v_0)
+r_f=2e3
+v_f=200
+e_f = E(r_f,v_f)
 
 eSteps=abs(int(e_f/1000))
 p_s=1.01325e5
@@ -48,5 +53,4 @@ def gay(y,e, Omega, sigma, m, A):
           ]
     return dyde
 
-t=np.linspace(e_0,e_f, eSteps)
-y0=[1e5,0,0,0,0]
+t=np.linspace(e_0,e_f, 1000)
