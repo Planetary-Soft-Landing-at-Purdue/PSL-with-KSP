@@ -19,7 +19,7 @@ A = concatenate((A, np.zeros((7, 1))), axis=1)
 
 #  Vessel-specific constants
 m_f = 9495
-rho_1 = 936508 * .1
+rho_1 = 936508 * .15
 rho_2 = 936508 * .4
 alpha = 3.46e-4
 gamma = pi/4
@@ -42,7 +42,7 @@ def matExp(A, x):
         expMat = expMat + np.linalg.matrix_power(A, i) * x**i / factorial(i)
     return expMat
 
-def PDG(delta_t, x0, initialSearch=False, minDistance=False, tWait=0, tSolve=None, dMax=None):
+def PDG(delta_t, x0, initialSearch=False, minDistance=False, tSolveTotal=None, tWait=0, tSolve=None, dMax=None):
     global rowList, colList, valList, bVect, dt, omega, m0
 
     #  Initial wet mass
@@ -73,7 +73,7 @@ def PDG(delta_t, x0, initialSearch=False, minDistance=False, tWait=0, tSolve=Non
     elif minDistance: return goldenSearch(0, x0)
 
     else:                               
-        sol = runEcos(int(tSolve/dt), int(tWait), x0, m0, dMax=dMax)      
+        sol = runEcos(int(tSolve/dt), int(tWait), x0, m0, dMax=dMax, tSolveTotal=int(tSolveTotal/dt))      
         
         # from the optimized solution found by ecos,
         # a list is created of the thrust vectors at
@@ -179,7 +179,7 @@ def goldenSearch(tWait, x0):
     # returns descent time and optimal final landing distance 
     return t1 * dt, fDist_1, fFuel_1
            
-def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
+def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None, tSolveTotal=None):
 
     ''' Finds linear, SOC, and exponential inequality constraints,
         then equality constraints, then runs ECOS solver.
@@ -195,7 +195,7 @@ def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
             finDist (double):   optimized landing error
     '''
 
-    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, dMax)
+    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, dMax, tSolveTotal=tSolveTotal)
     A_mat, b = equalityConstraints(tSolve, x_s)
     c = np.zeros(11 * tSolve + 1)
     
@@ -261,7 +261,7 @@ def equalityConstraints(tSteps, x_s):
 
     return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
-def socConstraints(tSteps, goldSearch, m_s, dMax=None):
+def socConstraints(tSteps, goldSearch, m_s, dMax=None, tSolveTotal=None):
     # Creates linear, second order cone, and exponential cone constraints used 
     # in the ecos solver. These constraints are of the type, Gx <=_k h. First 
     # 2*tSteps rows in G are linear inequality constraints, the last 3*tSteps rows
@@ -302,7 +302,7 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
         
         G_row.extend([tSteps+k, tSteps+k])               # thrust pointing constraint
         G_col.extend([kCol + 7, kCol + 10])
-        G_val.extend([1, -sin(pi/2 - theta)])
+        G_val.extend([1, -cos(theta)])
         
         G_row.extend([kRow, kRow+1, kRow+2, kRow+3])     # thrust magnitude constraint
         G_col.extend([kCol+10, kCol+7, kCol+8, kCol+9])

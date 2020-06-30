@@ -6,7 +6,6 @@ def process_time():
 	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 
 	ns.startPDG = False
-	targetHeight = 2
 
 	# makes all necessary connections with ksp
 	conn 	= krpc.connect(address='192.168.0.109')
@@ -41,7 +40,7 @@ def process_time():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 600: pass
+	while position_stream()[1] < 400: pass
 
 	vessel.control.throttle = 0
 	vessel.auto_pilot.sas 	= False
@@ -53,12 +52,12 @@ def process_time():
 
 	# continuously updates the vessel's thrust until it reaches a certain
 	# altitude above its target landing spot
-	while ns.new_eta == None or position_stream()[1] > 2 + targetHeight:
+	while ns.new_eta == None or position_stream()[1] > 1:
 		# updates current state vector
 		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
 		ns.stateVect = np.array([
-			 position[1] - targetHeight, position[0], position[2],
-			 velocity[1]               , velocity[0], velocity[2],
+			 position[1], position[0], position[2],
+			 velocity[1], velocity[0], velocity[2],
 			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
 		ns.startPDG = True
 
@@ -103,16 +102,16 @@ def process_guid():
 	while ns.startPDG and tSolve > 0:
 		startTime = time.time()
 
-		ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tWait=timeWait, tSolve=tSolve, dMax=dMax)
+		ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tSolveTotal=tSolveTotal, tWait=timeWait, tSolve=tSolve, dMax=dMax)
 		print("Found new solution", tSolve)
 		ns.new_eta = True
 
-		time.sleep(2)
+		time.sleep(1)
 		tSolve -= time.time() - startTime
 	
-		if tSolve < tSolveTotal / 2 : ns.dt = .1
-		if tSolve < tSolveTotal / 4 : ns.dt = .05
-		if tSolve < tSolveTotal / 8: ns.dt = .02
+		if tSolve < tSolveTotal / 4 : ns.dt = .1
+		#if tSolve < tSolveTotal / 8 : ns.dt = .05
+		#if tSolve < tSolveTotal / 8: ns.dt = .02
 
 	#process_time.terminate()
 
@@ -129,4 +128,5 @@ if __name__ == '__main__':
 	Process_guid.start()
 	Process_time.join()
 	Process_guid.join()
+
 
