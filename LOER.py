@@ -57,9 +57,10 @@ e_0=E(r_0, v_0)
 r_f=(2e3+R_0)/R_0
 v_f=200/V_scale
 e_f = E(r_f,v_f)
+s_0=200e3/R_0
 s_f=0
 
-y_0=[r_0, 86*pi/180, 39*pi/180, -10*pi/180,0,s_f]
+y_0=[r_0, 86*pi/180, 39*pi/180, -30*pi/180,0,s_0]
 e=np.linspace(e_0,e_f, 100)
 
 sol=np.array(odeint(ode_e,y_0,e, args=(Omega, sigma, m, A)))
