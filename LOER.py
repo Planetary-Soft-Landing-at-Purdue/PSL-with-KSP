@@ -74,6 +74,20 @@ def ode_e(y, e, Omega, sigma, m, A):
   return dyde
 
 def ode_t(y, Omega, sigma, m, A):
+  '''
+    Parameters:
+      y (vector):     state vector -> [r, theta, phi, gamma, psi, s]_T
+      e (double):     energylike variable
+      Omega (double): Earth's rotation rate
+      sigma (double): bank angle
+      m (double):     vessel's mass
+      A (double):     surface area of vessel
+    Returns:
+      dydt (vector): the new state vector after one time step
+
+  '''
+  # calculates the change in the state vector after an incremental change in time
+
   r, theta, phi, V, gamma, psi, s = y
 
   D = 0.5 * rho(r - R_0) * V**2 * A * 0.50 / m
@@ -128,15 +142,7 @@ def solve_for_sigma(sigma, y_0, greatCircle):
 
   # finds the time elapsed for this descent
 
-  rList, dTime = sol[:, 0], 0
- 
-  for de, r in enumerate(rList):
-    V = (2 * (mu / r - e[de]))**0.5
-    D = 0.5 * rho(r - R_0) * V**2 * A * 0.50 / m
-
-    dTime += ((D * V) ** -1) * e[de]
-
-  return sol, sol[-1][5], dTime
+  return sol, sol[-1][5]
 
 def min_sigma(greatCircle, y_0):
   '''
@@ -152,8 +158,8 @@ def min_sigma(greatCircle, y_0):
   # as close to the desired location as necessary. Starts at the upper bound, 90 degrees.
 
   sigma_0, sigma_1 = pi / 4, pi / 4 - pi / 64
-  _, z_0, _        = solve_for_sigma(sigma_0, y_0, greatCircle)
-  _, z_1, _        = solve_for_sigma(sigma_1, y_0, greatCircle)
+  _, z_0           = solve_for_sigma(sigma_0, y_0, greatCircle)
+  _, z_1           = solve_for_sigma(sigma_1, y_0, greatCircle)
 
   epsilon = 1e-12
 
@@ -163,8 +169,8 @@ def min_sigma(greatCircle, y_0):
     sigma_0 = sigma_1
     sigma_1 = sigma_2
 
-    z_0       = z_1
-    _, z_1, _ = solve_for_sigma(sigma_1, y_0, greatCircle)
+    z_0    = z_1
+    _, z_1 = solve_for_sigma(sigma_1, y_0, greatCircle)
 
   return sigma_1
 
@@ -187,7 +193,7 @@ def find_time_descent(y_0, y_f):
   y, t         = [y_0[0], y_0[1], y_0[2], v_0, y_0[3], y_0[4], y_0[5]], 0
   rList, sList = [y[0]], [y[6]]
 
-  while abs(y[6] - y_f[5]) > 1e-5:
+  while y[0] > R_0 and abs(y[6] - y_f[5]) > 1e-5:
     len(y)
     y  = ode_t(y, Omega, sigma, m, A)
     t += 1
@@ -200,13 +206,13 @@ def find_time_descent(y_0, y_f):
 # greatCircle the the angle, in radians, in between the initial and
 # final positions around the great circle. y_0 is the initial state 
 # vector
-greatCircle = .1*pi/180
-y_0         = [4e4+R_0, 0, .2*pi/180, 10*pi/180, 0, greatCircle]
+greatCircle = .4*pi/180
+y_0         = [8e4+R_0, 0, .2*pi/180, 10*pi/180, 0, greatCircle]
 
 # sigma is the optimally found value for sigma, sol is a list of 
 # statevectors at each step
 sigma           = min_sigma(greatCircle, y_0)
-sol, _, dTime   = solve_for_sigma(sigma, y_0, greatCircle) 
+sol, _          = solve_for_sigma(sigma, y_0, greatCircle) 
 t, rList, sList = find_time_descent(y_0, sol[-1])
 
 print(t)
@@ -228,7 +234,7 @@ def printPath(sol, rList, sList):
     yList1.append(rList[t] * cos(sList[t]))
 
   earthX, earthY = [], []
-  sList = np.linspace(0, .1*pi/180, len(xList0))
+  sList = np.linspace(0, 1*pi/180, len(xList0))
   for d in range(len(sList)):
     x, y = R_0 * sin(sList[d]), R_0 * cos(sList[d])
     earthX.append(x)
