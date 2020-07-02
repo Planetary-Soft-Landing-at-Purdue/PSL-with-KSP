@@ -18,6 +18,7 @@ rho_s = 1.2250
 T_s   = 288.16
 R     = 287
 v_0   = 2e2
+dt=0.1
 
 
 # energy-like variable used for path-finding
@@ -80,23 +81,23 @@ def ode_t(y, Omega, sigma, m, A):
   L = 0.5 * rho(r - R_0) * V**2 * A * 0.25 / m
 
   y = [#r-dot
-       r     + (V * sin(gamma)),
+       r     + dt*(V * sin(gamma)),
        #theta-dot
-       theta + (V * cos(gamma) * sin(psi) / (r * cos(phi))),
+       theta + dt*(V * cos(gamma) * sin(psi) / (r * cos(phi))),
        #phi-dot
-       phi   + (V * cos(gamma) * cos(psi) / r),
+       phi   + dt*(V * cos(gamma) * cos(psi) / r),
        #V-dot
-       V     + (-D - (mu * sin(gamma) / r**2)
+       V     + dt*(-D - (mu * sin(gamma) / r**2)
         + Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))),
        #gamma-dot
-       gamma + (V**-1 * (L * cos(sigma) + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * cos(phi) * sin(psi)
+       gamma + dt*(V**-1 * (L * cos(sigma) + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * cos(phi) * sin(psi)
         + Omega**2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))),
        #psi-dot
-       psi   + (V**-1 * ((L * sin(sigma) / cos(gamma)) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)
+       psi   + dt*(V**-1 * ((L * sin(sigma) / cos(gamma)) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)
         -2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi)) 
         + Omega**2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))),
        #s-dot
-       s     + (-V * cos(gamma) / r)
+       s     + dt*(-V * cos(gamma) / r)
       ]
   return y
 
@@ -208,6 +209,7 @@ y_0         = [4e4+R_0, 0, .2*pi/180, 10*pi/180, 0, greatCircle]
 sigma           = min_sigma(greatCircle, y_0)
 sol, _, dTime   = solve_for_sigma(sigma, y_0, greatCircle) 
 t, rList, sList = find_time_descent(y_0, sol[-1])
+t=t*dt
 
 print(t)
 
