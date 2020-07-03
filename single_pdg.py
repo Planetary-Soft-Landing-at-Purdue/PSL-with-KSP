@@ -1,6 +1,7 @@
 from multiprocessing import Process, Manager, Lock
 import krpc, time, pdg
 import numpy as np
+from math import sin, cos, pi
 
 # initializes everything
 
@@ -11,11 +12,18 @@ orbit 	= vessel.orbit
 body 	= orbit.body
 bcbf 	= body.reference_frame
 bci 	= body.non_rotating_reference_frame
-omega 	= body.angular_velocity(bci)
+omega 	= -1*body.angular_velocity(bci)[1]
 
 pcpf = sc.ReferenceFrame.create_relative(bcbf, 
 		position=vessel.position(bcbf),
 		rotation=vessel.rotation(bcbf))
+
+lat=body.latitude_at_position(vessel.position,bcbf)
+long=body.longitude_at_position(vessel.position, bcbf)
+
+w=[omega*sin(lat+pi/2), omega*cos(lat+pi/2)*cos(long), omega*cos(lat+pi/2)*sin(long)]
+g=body.surface_gravity
+pdg.init_constants(g, w)
 
 # starts all of the necessary connections and streams
 

@@ -16,13 +16,28 @@ s_W = np.array([
 A = concatenate((np.zeros((3, 3)), np.identity(3)), axis=1)
 A = concatenate((A, s_W, np.zeros((1, 6))))
 A = concatenate((A, np.zeros((7, 1))), axis=1)
+def init_constants(g_i,w_i):
+    global w, g, s_w, A
+    w=w_i
+    g[7]=-g_i
+    s_W = np.array([
+    [w[2]**2+w[1]**2,   -w[1]*w[0],         -w[2]* w[0]     ,   0,          2*w[2],     -2*w[1]],
+    [-w[1]*w[0],        w[2]**2+w[0]**2,    -w[2]*w[1]      ,   -2*w[2],    0,          2*w[0] ],
+    [-w[2]*w[0],        -w[2]*w[1],         w[1]**2+w[0]**2 ,   2*w[1],     -2*w[0],    0],
+                ])
+    A = concatenate((np.zeros((3, 3)), np.identity(3)), axis=1)
+    A = concatenate((A, s_W, np.zeros((1, 6))))
+    A = concatenate((A, np.zeros((7, 1))), axis=1)
+    
+    return True
+
 
 #  Vessel-specific constants
 m_f = 9495
-rho_1 = 100
+rho_1 = 936508 * .15
 rho_2 = 936508 * .4
 alpha = 3.46e-4
-gamma = pi/12
+gamma = pi/4
 theta = pi/4
 B = concatenate((np.zeros((3, 3)), np.identity(3), np.zeros((1, 3))), axis=0)
 B = concatenate((B, np.array([[0, 0, 0, 0, 0, 0, -alpha]]).T), axis=1)
@@ -42,7 +57,7 @@ def matExp(A, x):
         expMat = expMat + np.linalg.matrix_power(A, i) * x**i / factorial(i)
     return expMat
 
-def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
+def PDG(delta_t, x0, initialSearch=False, minDistance=False, tSolveTotal=None, tWait=0, tSolve=None, dMax=None):
     global rowList, colList, valList, bVect, dt, omega, m0
 
     #  Initial wet mass
@@ -67,20 +82,13 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
         
         bVect = np.dot(omega, g)
 
-    if initialSearch:
-        # returns solve time from initial path
-        return SCHEDULE_PDG(x0)
+    # returns wait time before engine ignition
+    if initialSearch: return SCHEDULE_PDG(x0)
+    # returns minimum landing distance
+    elif minDistance: return goldenSearch(0, x0)
 
-    else: 
-        # finds the state vector and wet mass if the vessel
-        # waits tWait before starting its ignition 
-           
-        x_s, eta, m_s = x0, x0[7:11], m0                                    
-        for _ in range(int(tWait / dt)):                                         
-            x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-        m_s -= alpha * rho_2 * (tWait * dt)                                     
-        
-        sol = runEcos(int(tSolve/dt), int(tWait/dt), x_s, m_s, dMax=dMax)      
+    else:                               
+        sol = runEcos(int(tSolve/dt), int(tWait), x0, m0, dMax=dMax, tSolveTotal=int(tSolveTotal/dt))      
         
         # from the optimized solution found by ecos,
         # a list is created of the thrust vectors at
@@ -90,8 +98,8 @@ def PDG(delta_t, x0, initialSearch=False, tWait=None, tSolve=None, dMax=None):
         
         for t in range(int(tSolve/dt)):                                   
             thrustVect = sol[11*t + 7:11*t + 10]                       
-            thrustMagn = linalg.norm(thrustVect)                       
-            thrustDire = thrustVect / thrustMagn
+            thrustMagn = linalg.norm(thrustVect)
+            thrustDire = thrustVect / (thrustMagn + .0000001)
             
             eta.extend(thrustDire)
             eta.append(thrustMagn)
@@ -109,30 +117,30 @@ def SCHEDULE_PDG(x0):
             dMax (double):      optimal maximum landing error
     '''
 
-    tHigh, tLow = 0, 0    
+    tLow, tHigh = 0, sqrt(2 * x0[0] / -g[7]) / dt
+    #tLow, tHigh = 0, 0
+
     tWait_1 = int(tHigh - zeta * (tHigh - tLow))
     tWait_2 = int(tLow + zeta * (tHigh - tLow))
-    tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-    tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
+    _, _, fFuel_1 = goldenSearch(tWait_1, x0)
+    _, _, fFuel_2 = goldenSearch(tWait_2, x0)
     
-    while abs(tWait_1 - tWait_2) > int(1/dt):
-        moveRight = f_t1 > f_t2
-        
-        if moveRight:
+    while abs(tWait_1 - tWait_2) > int(1/dt):       
+        if fFuel_1 == None or (fFuel_2 != None and fFuel_1 > fFuel_2):
             tLow = tWait_1
-            tWait_1, tDesc_1, f_t1 = tWait_2, tDesc_2, f_t2
+            tWait_1, fFuel_1 = tWait_2, fFuel_2
             
-            tWait_2 = int(tLow + zeta * (tHigh - tLow))
-            tDesc_2, f_t2 = goldenSearch(tWait_2, x0)
+            tWait_2       = int(tLow + zeta * (tHigh - tLow))
+            _, _, fFuel_2 = goldenSearch(tWait_2, x0)
 
         else:
             tHigh = tWait_2
-            tWait_2, tDesc_2, f_t2 = tWait_1, tDesc_1, f_t1
+            tWait_2, fFuel_2 = tWait_1, fFuel_1
             
-            tWait_1 = int(tHigh - zeta * (tHigh - tLow))
-            tDesc_1, f_t1 = goldenSearch(tWait_1, x0)
-        
-    return tWait_1 * dt, tDesc_1 * dt, f_t1      
+            tWait_1       = int(tHigh - zeta * (tHigh - tLow))
+            _, _, fFuel_1 = goldenSearch(tWait_1, x0)
+    
+    return tWait_2 * dt  
  
 def goldenSearch(tWait, x0):
 
@@ -149,44 +157,44 @@ def goldenSearch(tWait, x0):
     # waits tWait before starting its ignition
     
     x_s, eta, m_s = x0, x0[7:11], m0
-    for _ in range(tWait):
-        x_s = concatenate(( np.dot(omega, (x_s + g)), eta ))
-    m_s -= alpha * rho_2 * (tWait * dt)
+    for _ in range(int(tWait)):
+        x_s = concatenate(( np.dot(omega, (x_s + g * dt)), eta ))
+    m_s = np.exp(x_s[6])                                  
     
-    tLow = ((m_s - m_f) / (alpha * rho_2 * dt)) 
     tHigh = ((m_s - m_f) / (alpha * rho_2 * dt)) 
-    t1 = int(tHigh)
-    #t1 = int(tHigh - zeta * (tHigh - tLow))
-    #t2 = int(tLow + zeta * (tHigh - tLow))
-    err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-    #err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+    tLow  = 0
+    
+    t1 = int(tHigh - zeta * (tHigh - tLow))
+    t2 = int(tLow + zeta * (tHigh - tLow))
+    err_1, fDist_1, fFuel_1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+    err_2, fDist_2, fFuel_2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
     
     # conducts golden search until t1 and t2 both yield optimal solutions, 
     # and t1 and t2 are one second away from each other. Returns results
     # of t1.
-    '''
-        while (err_1 != 0 and err_1 != 10) or (err_2 != 0 and err_2 != 10) or abs(t1 - t2) > int(4/dt):
-            moveRight = (err_1 != 0 and err_1 != 10) or ((err_2 == 0 or err_2 == 10) and f_t1 > f_t2)
+    
+    while err_1 != 0 or err_2 != 0 or abs(t1 - t2) > int(1/dt):
 
-            if moveRight:
-                tLow = t1
-                t1, err_1, f_t1 = t2, err_2, f_t2 
-                
-                t2 = int(tLow + zeta * (tHigh - tLow))
-                err_2, f_t2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+        if err_1 != 0 or (err_2 == 0 and fFuel_1 > fFuel_2):
+            tLow = t1
+            t1, err_1, fDist_1, fFuel_1 = t2, err_2, fDist_2, fFuel_2 
+            
+            t2 = int(tLow + zeta * (tHigh - tLow))               
+            err_2, fDist_2, fFuel_2 = runEcos(t2, tWait, x_s, m_s, goldSearch=True) 
+        else:
+            tHigh = t2
+            t2, err_2, fDist_2, fFuel_2 = t1, err_1, fDist_1, fFuel_1
+            
+            t1 = int(tHigh - zeta * (tHigh - tLow))
+            err_1, fDist_1, fFuel_1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
 
-            else:
-                tHigh = t2
-                t2, err_2, f_t2 = t1, err_1, f_t1
-                
-                t1 = int(tHigh - zeta * (tHigh - tLow))
-                err_1, f_t1 = runEcos(t1, tWait, x_s, m_s, goldSearch=True)
-            print(tWait, '  ', t1, t2, '  ', err_1, err_2, '  ', f_t1, f_t2, '  ')
-    '''
+        if err_2 != 0 and abs(t1 - t2) < int(1/dt):
+            return None, None, None
+
     # returns descent time and optimal final landing distance 
-    return t1, f_t1 
+    return t1 * dt, fDist_1, fFuel_1
            
-def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
+def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None, tSolveTotal=None):
 
     ''' Finds linear, SOC, and exponential inequality constraints,
         then equality constraints, then runs ECOS solver.
@@ -202,7 +210,7 @@ def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
             finDist (double):   optimized landing error
     '''
 
-    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, dMax)
+    G, h, q, l, e = socConstraints(tSolve, goldSearch, m_s, dMax, tSolveTotal=tSolveTotal)
     A_mat, b = equalityConstraints(tSolve, x_s)
     c = np.zeros(11 * tSolve + 1)
     
@@ -212,7 +220,7 @@ def runEcos(tSolve, tWait, x_s, m_s, goldSearch=False, dMax=None):
         solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                               verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
         finDist = linalg.norm(solution['x'][11 * (tSolve - 1) + 1:11 * (tSolve - 1) + 3])
-        return solution['info']['exitFlag'], finDist
+        return solution['info']['exitFlag'], finDist, solution['x'][-5]
     
     else:
         # Optimize final fuel.
@@ -268,7 +276,7 @@ def equalityConstraints(tSteps, x_s):
 
     return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
-def socConstraints(tSteps, goldSearch, m_s, dMax=None):
+def socConstraints(tSteps, goldSearch, m_s, dMax=None, tSolveTotal=None):
     # Creates linear, second order cone, and exponential cone constraints used 
     # in the ecos solver. These constraints are of the type, Gx <=_k h. First 
     # 2*tSteps rows in G are linear inequality constraints, the last 3*tSteps rows
@@ -309,11 +317,7 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
         
         G_row.extend([tSteps+k, tSteps+k])               # thrust pointing constraint
         G_col.extend([kCol + 7, kCol + 10])
-        if tSteps - t >= 10 / dt:
-            G_val.extend([1, -sin(pi/2 - theta)])
-        else:
-            a = 1 - (t % (tSteps - 10 / dt)) / (10 / dt)
-            G_val.extend([1, -sin(pi/2 - a * theta)])
+        G_val.extend([1, -cos(theta)])
         
         G_row.extend([kRow, kRow+1, kRow+2, kRow+3])     # thrust magnitude constraint
         G_col.extend([kCol+10, kCol+7, kCol+8, kCol+9])
@@ -359,16 +363,3 @@ def socConstraints(tSteps, goldSearch, m_s, dMax=None):
     tWait, tSolve, dMax = findPath(delta_t, stateVect0, initialSearch=True)        
     sol                 = findPath(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax)
 '''
-
-if __name__ == "__main__":
-    delta_t = .5
-    m0 = 17495
-    stateVect0 = np.array([256, -8.3, -10.9, 25.1, -.9, -1.24, 9.69, 0, 0, 0, 0])
-    #  findPath ==> findInitialPath (returns tWait) ==> goldenSearch (returns tSolve, dMax)
-    print("Looking for solution")
-    tWait, tSolve, dMax = PDG(delta_t, stateVect0, initialSearch=True)
-
-    #  findPath (returns eta) ==> runEcos
-    thrust = PDG(delta_t, stateVect0, tWait=tWait, tSolve=tSolve, dMax=dMax)
-
-    #  PUT VESSELS IN MANAGED NAMESPACES?
