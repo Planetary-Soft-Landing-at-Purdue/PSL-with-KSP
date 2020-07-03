@@ -29,8 +29,6 @@ def init_constants(g_i,w_i):
     A = concatenate((A, s_W, np.zeros((1, 6))))
     A = concatenate((A, np.zeros((7, 1))), axis=1)
     
-    return True
-
 
 #  Vessel-specific constants
 m_f = 9495

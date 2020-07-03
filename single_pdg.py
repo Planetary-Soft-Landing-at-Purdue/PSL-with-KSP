@@ -1,122 +1,138 @@
 from multiprocessing import Process, Manager, Lock
-import krpc, time, pdg
+import krpc, time, pdg, math
 import numpy as np
-from math import sin, cos, pi
+from math import cos, sin, pi
 
-# initializes everything
+def process_time():
+	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 
-conn 	= krpc.connect(address='192.168.0.109')
-sc 		= conn.space_center
-vessel 	= sc.active_vessel
-orbit 	= vessel.orbit
-body 	= orbit.body
-bcbf 	= body.reference_frame
-bci 	= body.non_rotating_reference_frame
-omega 	= -1*body.angular_velocity(bci)[1]
+	ns.startPDG = False
 
-pcpf = sc.ReferenceFrame.create_relative(bcbf, 
+	# makes all necessary connections with ksp
+	conn 	= krpc.connect(address='192.168.0.109')
+	sc 		= conn.space_center
+	vessel 	= sc.active_vessel
+	orbit 	= vessel.orbit
+	body 	= orbit.body
+	bcbf 	= body.reference_frame
+	bci 	= body.non_rotating_reference_frame
+	omega 	= -1*body.angular_velocity(bci)[1]
+
+	# creates reference frame, with origin at the launching pad
+	pcpf = sc.ReferenceFrame.create_relative( bcbf,
 		position=vessel.position(bcbf),
 		rotation=vessel.rotation(bcbf))
+    
+	lat = body.latitude_at_position(vessel.position(bcbf),bcbf) * pi/180
+	long=body.longitude_at_position(vessel.position(bcbf), bcbf)*pi/180
+	
+	w=[omega*sin(lat+pi/2), omega*cos(lat+pi/2)*cos(long), omega*cos(lat+pi/2)*sin(long)]
+	g=body.surface_gravity
+	pdg.init_constants(abs(g), w)
+	# streams are set up to create efficient flow of data from ksp
+	position_stream = conn.add_stream(vessel.position, pcpf)
+	velocity_stream = conn.add_stream(vessel.velocity, pcpf)
+	mass_stream 	= conn.add_stream(getattr, vessel, 'mass')
+	met_stream 		= conn.add_stream(getattr, vessel, 'met')
+	position_stream.start()
+	velocity_stream.start()
+	mass_stream.start()
+	met_stream.start()
 
-lat=body.latitude_at_position(vessel.position,bcbf)
-long=body.longitude_at_position(vessel.position, bcbf)
+	# launches the vessel, waits until it reaches a certain 
+	# altitude, then calls pdg and begins descent
+	print("Made connections, launching")
 
-w=[omega*sin(lat+pi/2), omega*cos(lat+pi/2)*cos(long), omega*cos(lat+pi/2)*sin(long)]
-g=body.surface_gravity
-pdg.init_constants(g, w)
+	vessel.auto_pilot.sas = True
+	vessel.control.throttle = .6
+	vessel.control.activate_next_stage()
 
-# starts all of the necessary connections and streams
+	while position_stream()[1] < 400: pass
 
-position_stream = conn.add_stream(vessel.position, pcpf)
-position_stream.start()
+	vessel.control.throttle = 0
+	vessel.auto_pilot.sas 	= False
+	vessel.auto_pilot.engage()
+	vessel.auto_pilot.reference_frame = pcpf
 
-velocity_stream = conn.add_stream(vessel.velocity, pcpf)
-velocity_stream.start()
+	print("Starting controlled descent")
+	startTime, n, tPrev, ns.eta = time.time(), 0, -ns.dt, [0, 0, 0, 0]
 
-mass_stream = conn.add_stream(getattr, vessel, 'mass')
-mass_stream.start()
+	# continuously updates the vessel's thrust until it reaches a certain
+	# altitude above its target landing spot
+	while ns.new_eta == None or position_stream()[1] > 1:
+		# updates current state vector
+		position, velocity, mass = position_stream(), velocity_stream(), mass_stream()
+		ns.stateVect = np.array([
+			 position[1], position[0], position[2],
+			 velocity[1], velocity[0], velocity[2],
+			 np.log(mass), ns.eta[n]*ns.eta[n+3], ns.eta[n+1]*ns.eta[n+3], ns.eta[n+2]*ns.eta[n+3], ns.eta[n+3]])
+		ns.startPDG = True
 
-met_stream = conn.add_stream(getattr, vessel, 'met')
-met_stream.start()
+		# waits until a new eta has been found
+		if ns.new_eta == None: 
+			vessel.control.throttle = .01
+			time.sleep(ns.dt)
 
-print("Started all streams")
+		else:
+			if ns.new_eta == True:
+				ns.new_eta = False
+				startTime, n, tPrev = time.time(), 0, -ns.dt
 
-# Activates sas and activates the launch. Contiunes
-# ascending until it reaches an altitude of 400 meters, 
-# then begins its descent
+			# waits until a there's a new discrete time step before updating the
+			# vessel's thrust
+			while int((time.time() - startTime) / ns.dt) == tPrev: pass
+			n, tPrev = n + 4, int((time.time() - startTime) / ns.dt)
 
-print("Starting Launch")
+			vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
+			vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / pdg.rho_2)
 
-vessel.auto_pilot.sas = True
-vessel.control.throttle = .6
-vessel.control.activate_next_stage()
+	ns.startPDG = False
+	vessel.control.throttle = 0
 
-while vessel.flight().surface_altitude < 800: pass
+def process_guid():
+	global tWait, tSolve, dMax, dt
 
-vessel.control.throttle = 0
-vessel.auto_pilot.sas 	= False
+	ns.dt 		 = 1
+	ns.new_eta 	 = None
 
-# find the current state vector, calls pdg, finds a solution
+	while ns.startPDG == False: pass
 
-stateVect = np.array([
-	 position_stream()[1], position_stream()[0], position_stream()[2],
-	-velocity_stream()[1], velocity_stream()[0], velocity_stream()[2],
-	np.log(mass_stream()), 0, 0, 0, 0])
+	timeWait = pdg.PDG(ns.dt, ns.stateVect, initialSearch=True)
+	print("Will wait", timeWait, "seconds before starting pdg")
+	time.sleep(timeWait)
+	print("Stopped waiting")
 
-dt = .5
+	ns.dt 		    = .2
+	tSolve, dMax, _ = pdg.PDG(ns.dt, ns.stateVect, minDistance=True)
+	tSolveTotal     = tSolve
 
-print("Looking for solution")
-tWait, tSolve, dMax = pdg.PDG(dt, stateVect, initialSearch=True)
-eta, sol = pdg.PDG(dt, stateVect, tWait=tWait, tSolve=tSolve, dMax=dMax)
-print("Found solution")
+	while ns.startPDG and tSolve > 0:
+		startTime = time.time()
 
-'''
-	This is where eta is used to guide the vessel's descent. It waits
-	until it reaches the altiude where it started the pdg call. Then, 
-	it continues updating the vessel's direction and thrust magnitude
-	until it reaches 5 meters above the ground. For every dt, it updates
-	the vessel's thrust to a new vector from eta.
-'''
+		ns.eta, _  = pdg.PDG(ns.dt, ns.stateVect, tSolveTotal=tSolveTotal, tWait=timeWait, tSolve=tSolve, dMax=dMax)
+		print("Found new solution", tSolve)
+		ns.new_eta = True
 
-realSol = []
+		time.sleep(1)
+		tSolve -= time.time() - startTime
+	
+		if tSolve < tSolveTotal / 4 : ns.dt = .1
+		#if tSolve < tSolveTotal / 8 : ns.dt = .05
+		#if tSolve < tSolveTotal / 8: ns.dt = .02
 
-vessel.auto_pilot.engage()
-vessel.auto_pilot.reference_frame = pcpf
+	#process_time.terminate()
 
-while vessel.flight().surface_altitude > 800: pass
-print("Starting controlled descent")
-startTime, n, tPrev = time.time(), 0, -dt
+if __name__ == '__main__':
+	lock = Lock()
+	manager = Manager()
+	ns = manager.Namespace()
 
-while vessel.flight().surface_altitude > 5 and n < len(eta) - 4:
-	# waits until a there's a new discrete time step before updating the
-	# vessel's thrust
-	while int( (time.time() - startTime) / dt ) == tPrev: pass
+	#initiating and starting two processes
+	Process_time = Process(target=process_time, name='TIME')
+	Process_guid = Process(target=process_guid, name='GUID')
 
-	n, tPrev, mass = n + 4, int( (time.time() - startTime) / dt ), mass_stream()
+	Process_time.start()
+	Process_guid.start()
+	Process_time.join()
+	Process_guid.join()
 
-	vessel.auto_pilot.target_direction = eta[n+1], eta[n], eta[n+2]
-	vessel.control.throttle 		   = eta[n+3] * (mass / pdg.rho_2)
-
-	pos  = position_stream()
-	velo = velocity_stream()
-	realSol.extend([pos[1], pos[0], pos[2], velo[1], velo[0], velo[2], np.log(mass), eta[n]*eta[n+3], eta[n+1]*eta[n+3], eta[n+2]*eta[n+3], eta[n+3]])
-
-vessel.control.throttle = 0
-
-# here we write two files, one containing the control eta 
-# (what its supposed to do), and the other contains the real
-# eta (what it actually does)
-
-pdgDataFile = open("dataFile_control.txt", 'w')
-pdgString = ""
-for s in sol:
-	pdgString += str(s) + ','
-pdgDataFile.write(pdgString)
-pdgDataFile.close()
-
-realDataFile = open("dataFile_real.txt", "w")
-realString = ""
-for s in realSol:
-	realString += str(s) + ','
-realDataFile.write(realString)
-realDataFile.close()
