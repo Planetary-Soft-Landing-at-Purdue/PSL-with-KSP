@@ -60,7 +60,7 @@ def process_time():
 
 	# continuously updates the vessel's thrust until it reaches a certain
 	# altitude above its target landing spot
-	while ns.new_eta == None or position_stream()[1] > 1:
+	while ns.new_eta == None or position_stream()[1] > 2:
 		# updates ns namespace variables
 		ns.position = position_stream()
 		ns.velocity = velocity_stream()
@@ -94,12 +94,20 @@ def process_guid():
 
 	time.sleep(1)
 	ns.new_eta = None
-	pdg = PDG()
+
+	m_f   = 9495
+	rho_1 = 936508 * .15
+	rho_2 = 936508 * .4
+	alpha = 3.46e-4
+	gamma = pi / 3
+	theta = pi / 4
+
+	pdg = PDG(m_f, rho_1, rho_2, alpha, gamma, theta)
 
 	# waits until process time tells it to start looking for a solution
 	while ns.startPDG == False: pass
 	pdg.init_constants(ns.g, ns.w)
-	pdg.dt, ns.dt, ns.rho_2 = .25, .25, pdg.rho_2
+	pdg.dt, ns.dt, ns.rho_2 = .2, .2, pdg.rho_2
 
 	count, tSolve = 0, 11
 
@@ -112,7 +120,7 @@ def process_guid():
 
 		# for every 8 pdg calls, re-optimize descent time, don't do this if the 
 		# vessel's altitude is less than 50 meters, optimize for final distance
-		if count % 8 == 0 and tSolve > 10.0:
+		if count % 6 == 0 and ns.position[1] > 100:
 			tSolveTemp = pdg.PDG(minDistance=True)
 			if tSolveTemp is not None:
 				tSolve = tSolveTemp
@@ -122,10 +130,11 @@ def process_guid():
 
 		# calls pdg to optimize fuel use and recalculate path, tells process time
 		# that there is a new solution
-		startTime = ns.met
-		ns.eta    = pdg.PDG(tSolve=tSolve)
-		print("----", tSolve)
-		ns.new_eta = True
+		if ns.position[1] > 10:
+			startTime = ns.met
+			ns.eta    = pdg.PDG(tSolve=tSolve)
+			print("----", tSolve, ns.position[1])
+			ns.new_eta = True
 
 		count  += 1
 		tSolve -= ns.met - startTime
