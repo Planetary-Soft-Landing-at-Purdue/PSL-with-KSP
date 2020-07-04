@@ -49,8 +49,9 @@ def process_time():
 	vessel.control.activate_next_stage()
 
 	while position_stream()[1] < 400: pass
-
 	vessel.control.throttle = 0
+	while velocity_stream()[1] > 0: pass
+
 	vessel.auto_pilot.sas 	= False
 	vessel.auto_pilot.engage()
 	vessel.auto_pilot.reference_frame = pcpf
@@ -58,15 +59,19 @@ def process_time():
 	print("Starting controlled descent")
 	startTime, n, tPrev, ns.eta = met_stream(), 0, -1, [0, 0, 0, 0]
 
+	realSol, pdgSol = [], []
+	ns.predTime     = 1
+
 	# continuously updates the vessel's thrust until it reaches a certain
 	# altitude above its target landing spot
-	while ns.new_eta == None or position_stream()[1] > 2:
+	while ns.new_eta == None or position_stream()[1] > 1:
 		# updates ns namespace variables
-		ns.position = position_stream()
-		ns.velocity = velocity_stream()
-		ns.mass     = mass_stream()
+		pos, velo, mass = position_stream(), velocity_stream(), mass_stream()
+		ns.predPos  = [pos[0]  + ns.predTime * velo[0],     pos[1]  + ns.predTime * velo[1],               pos[2]  + ns.predTime * velo[2]     ]
+		ns.predVelo = [velo[0] + ns.predTime * ns.eta[n+1], velo[1] + ns.predTime * (ns.eta[n] + ns.g[7]), velo[2] + ns.predTime * ns.eta[n+2] ]
+		ns.nextEta  = ns.eta[n], ns.eta[n+1], ns.eta[n+2], ns.eta[n+3] 
+		ns.predMass = mass_stream()
 		ns.met      = met_stream()
-		ns.currEta  = ns.eta[n], ns.eta[n+1], ns.eta[n+2], ns.eta[n+3] 
 
 		ns.startPDG = True
 
@@ -82,12 +87,25 @@ def process_time():
 			if int((met_stream() - startTime) / ns.dt) != tPrev: 
 				n, tPrev = n + 4, int((met_stream() - startTime) / ns.dt)
 
+				pdgSol.extend(ns.sol[(n // 4) * 11 : (n // 4) * 11 + 11])
+				realSol.extend([position_stream()[1], position_stream()[0], position_stream()[2], 
+					velocity_stream()[1], velocity_stream()[0], velocity_stream()[2], np.log(mass_stream()),
+					ns.eta[n], ns.eta[n+1], ns.eta[n+2], ns.eta[n+3]])
+
 			vessel.auto_pilot.target_direction = ns.eta[n+1], ns.eta[n], ns.eta[n+2]
 			vessel.control.throttle 		   = ns.eta[n+3] * (mass_stream() / ns.rho_2)
 
 	print("Finished Guidance")
 	ns.startPDG = False
 	vessel.control.throttle = 0
+
+	realData = open("real_data.txt", "w")
+	realData.write(str(realSol))
+	realData.close()
+
+	pdgData = open("pdg_data.txt", "w")
+	pdgData.write(str(pdgSol))
+	pdgData.close()
 
 def process_guid():
 	global tWait, tSolve, dMax, dt
@@ -107,37 +125,27 @@ def process_guid():
 	# waits until process time tells it to start looking for a solution
 	while ns.startPDG == False: pass
 	pdg.init_constants(ns.g, ns.w)
-	pdg.dt, ns.dt, ns.rho_2 = .2, .2, pdg.rho_2
+	pdg.dt, ns.dt, ns.rho_2 = 1, 1, pdg.rho_2
+	pdg.update_state_vector(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
 
-	count, tSolve = 0, 11
+	tSolve        = pdg.PDG(findTimeSolve=True)
+	print("Found tSolve")
+	pdg.dt, ns.dt = .1, .1
 
 	while ns.startPDG:
-		# update state vector
-		pdg.x  = [ns.position[1], ns.position[0], ns.position[2],
-				  ns.velocity[1], ns.velocity[0], ns.velocity[2],
-				  log(ns.mass), ns.currEta[0], ns.currEta[1], ns.currEta[2], ns.currEta[3]
-				 ]
+		startTime = ns.met
 
-		# for every 8 pdg calls, re-optimize descent time, don't do this if the 
-		# vessel's altitude is less than 50 meters, optimize for final distance
-		if count % 6 == 0 and ns.position[1] > 100:
-			tSolveTemp = pdg.PDG(minDistance=True)
-			if tSolveTemp is not None:
-				tSolve = tSolveTemp
-				print("----------------------------------")
-				print("----------Found new path----------")
-				print("----------------------------------")
+		# update state vector
+		pdg.update_state_vector(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
 
 		# calls pdg to optimize fuel use and recalculate path, tells process time
 		# that there is a new solution
-		if ns.position[1] > 10:
-			startTime = ns.met
-			ns.eta    = pdg.PDG(tSolve=tSolve)
-			print("----", tSolve, ns.position[1])
-			ns.new_eta = True
+		ns.sol, ns.eta = pdg.PDG(tSolve=tSolve)
+		print("----", tSolve)
 
-		count  += 1
-		tSolve -= ns.met - startTime
+		ns.new_eta  = True
+		tSolve     -= ns.met - startTime
+		ns.predTime = ns.met - startTime
 	
 		#if tSolve < tSolveTotal / 4 : ns.dt = .1
 		#if tSolve < tSolveTotal / 8 : ns.dt = .05
@@ -158,5 +166,3 @@ if __name__ == '__main__':
 	Process_guid.start()
 	Process_time.join()
 	Process_guid.join()
-
-
