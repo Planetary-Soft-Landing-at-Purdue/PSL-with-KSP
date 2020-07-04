@@ -1,4 +1,4 @@
-import ecos, time
+import ecos
 import numpy as np
 from math import tan, pi, exp, cos, log, factorial, sqrt, sin
 from scipy.sparse import csc_matrix
@@ -6,6 +6,7 @@ from numpy import linalg, concatenate
 
 class PDG:
     def __init__(self, m_f, rho_1, rho_2, alpha, gamma, theta):
+        # vessel specific constant values
         self.m_f   = m_f
         self.rho_1 = rho_1
         self.rho_2 = rho_2
@@ -16,6 +17,7 @@ class PDG:
         self.B     = concatenate((self.B, np.array([[0, 0, 0, 0, 0, 0, -self.alpha]]).T), axis=1)
         self.zeta  = 1 - .5 * (3 - sqrt(5))
 
+        # user-defined hyperparameters
         self.tWait = 0
         self.dMax  = None
 
@@ -23,14 +25,22 @@ class PDG:
         self.g = g
 
         s_W = np.array([
-                        [w[2]**2+w[1]**2,   -w[1]*w[0],         -w[2]* w[0]     ,   0,          2*w[2],     -2*w[1]],
-                        [-w[1]*w[0],        w[2]**2+w[0]**2,    -w[2]*w[1]      ,   -2*w[2],    0,          2*w[0] ],
-                        [-w[2]*w[0],        -w[2]*w[1],         w[1]**2+w[0]**2 ,   2*w[1],     -2*w[0],    0],
+                        [w[2]**2+w[1]**2,   -w[1]*w[0],         -w[2]* w[0]     ,   0,          2*w[2], -2*w[1]],
+                        [-w[1]*w[0],        w[2]**2+w[0]**2,    -w[2]*w[1]      ,   -2*w[2],    0,       2*w[0]],
+                        [-w[2]*w[0],        -w[2]*w[1],         w[1]**2+w[0]**2 ,   2*w[1],     -2*w[0],      0],
                        ])
 
         self.A = concatenate((np.zeros((3, 3)), np.identity(3)), axis=1)
         self.A = concatenate((self.A, s_W, np.zeros((1, 6))))
         self.A = concatenate((self.A, np.zeros((7, 1))), axis=1)
+
+    def update_state_vector(self, position, velocity, mass, currentEta):
+        # updates current state vector
+        self.m0 = mass
+        self.x  = [position[1], position[0], position[2],
+                   velocity[1], velocity[0], velocity[2],
+                   log(mass), currentEta[0], currentEta[1], currentEta[2], currentEta[3]
+                  ]
 
     def matExp(self, x):
 
@@ -47,13 +57,10 @@ class PDG:
             expMat = expMat + np.linalg.matrix_power(self.A, i) * x**i / factorial(i)
         return expMat
 
-    def PDG(self, tSolve=None, initialSearch=False, minDistance=False):
-        #  Initial wet mass
-        self.m0 = exp(self.x[6])
-
+    def PDG(self, tSolve=None, initialSearch=False, findTimeSolve=False):
         #  Define matrices used in ODE system for every timestep; used to construct equality matrix.
         phi        = self.matExp(self.dt)
-        psi        = np.trapz([np.dot(self.matExp(.002*tau*self.dt), self.B) for tau in range(500)], axis=0, dx=.002*self.dt)
+        psi        = np.trapz([np.dot(self.matExp(.002 * tau * self.dt), self.B) for tau in range(500)], axis=0, dx=.002 * self.dt)
         self.omega = concatenate((phi, psi), axis=1)
         E = concatenate((-self.omega, np.identity(7), np.zeros((7, 4))), axis=1)
 
@@ -68,9 +75,9 @@ class PDG:
         self.bVect = np.dot(self.omega, self.g)
 
         # returns wait time before engine ignition
-        if initialSearch: return self.SCHEDULE_PDG()
+        if initialSearch:   return self.SCHEDULE_PDG()
         # returns minimum landing distance
-        elif minDistance: return self.goldenSearch(self.tWait)
+        elif findTimeSolve: return self.goldenSearch(self.tWait)
 
         else:         
             sol = self.runEcos(int(tSolve/self.dt), self.tWait, self.x, self.m0)      
@@ -87,7 +94,7 @@ class PDG:
                 eta.extend(thrustVect)
                 eta.append(thrustMagn)
                 
-            return eta
+            return sol, eta
 
     def SCHEDULE_PDG(self):
         '''
@@ -138,46 +145,47 @@ class PDG:
         # finds the state vector and wet mass if the vessel 
         # waits tWait before starting its ignition
         
-        firstGoldSearch = self.dMax == None
+        #x_s, eta, m_s = self.x, self.x[7:11], self.m0
+        #for _ in range(int(tWait)):
+        #    x_s = concatenate(( np.dot(self.omega, (x_s + self.g * self.dt)), eta ))
+        #m_s = np.exp(x_s[6])                                  
+        m_s, x_s = self.m0, self.x
 
-        x_s, eta, m_s = self.x, self.x[7:11], self.m0
-        for _ in range(int(tWait)):
-            x_s = concatenate(( np.dot(self.omega, (x_s + self.g * self.dt)), eta ))
-        m_s = np.exp(x_s[6])                                  
-        
         tHigh = ((m_s - self.m_f) / (self.alpha * self.rho_2 * self.dt)) 
         tLow  = 0
-        
+
         t1 = int(tHigh - self.zeta * (tHigh - tLow))
         t2 = int(tLow + self.zeta * (tHigh - tLow))
-        err_1, fDist_1, fFuel_1 = self.runEcos(t1, tWait, x_s, m_s, goldSearch=True, firstGoldSearch=firstGoldSearch)
-        err_2, fDist_2, fFuel_2 = self.runEcos(t2, tWait, x_s, m_s, goldSearch=True, firstGoldSearch=firstGoldSearch)
-        
+        err_1, _, fDist_1 = self.runEcos(t1, tWait, x_s, m_s, goldSearch=True)
+        err_2, _, fDist_2 = self.runEcos(t2, tWait, x_s, m_s, goldSearch=True)
+
         # conducts golden search until t1 and t2 both yield optimal solutions, 
         # and t1 and t2 are one second away from each other. Returns results
         # of t1.
-        
+
         while err_1 != 0 or err_2 != 0 or abs(t1 - t2) > int(1/self.dt):
 
-            if err_1 != 0 or (err_2 == 0 and fFuel_1 > fFuel_2):
-                tLow = t1
-                t1, err_1, fDist_1, fFuel_1 = t2, err_2, fDist_2, fFuel_2 
-                
-                t2 = int(tLow + self.zeta * (tHigh - tLow))               
-                err_2, fDist_2, fFuel_2 = self.runEcos(t2, tWait, x_s, m_s, goldSearch=True, firstGoldSearch=firstGoldSearch) 
+            if err_1 != 0 or (err_2 == 0 and fDist_1 > fDist_2):
+                tLow, t1          = t1, t2
+                err_1, fDist_1    = err_2, fDist_2 
+                t2                = int(tLow + self.zeta * (tHigh - tLow))               
+                err_2, _, fDist_2 = self.runEcos(t2, tWait, x_s, m_s, goldSearch=True) 
+
             else:
-                tHigh = t2
-                t2, err_2, fDist_2, fFuel_2 = t1, err_1, fDist_1, fFuel_1
-                
-                t1 = int(tHigh - self.zeta * (tHigh - tLow))
-                err_1, fDist_1, fFuel_1 = self.runEcos(t1, tWait, x_s, m_s, goldSearch=True, firstGoldSearch=firstGoldSearch)
+                tHigh, t2         = t2, t1
+                err_2, fDist_2    = err_1, fDist_1
+                t1                = int(tHigh - self.zeta * (tHigh - tLow))
+                err_1, _, fDist_1 = self.runEcos(t1, tWait, x_s, m_s, goldSearch=True)
 
             if err_1 != 0 and err_2 != 0 and abs(t1 - t2) < int(1/self.dt):
+                print(t1, t2)
                 return None
 
-        if firstGoldSearch: self.dMax = fDist_1
-        if schedule_pdg:    return fFuel_1
-        else:               return t1 * self.dt
+        if schedule_pdg: return fDist_1
+        else:  
+            print("Maximum distance = ", fDist_1)
+            self.dMax = fDist_1          
+            return t1 * self.dt
 
     def runEcos(self, tSolve, tWait, x_s, m_s, goldSearch=False, firstGoldSearch=False):
 
@@ -195,18 +203,16 @@ class PDG:
                 finDist (double):   optimized landing error
         '''
 
-        G, h, q, l, e = self.socConstraints(tSolve, firstGoldSearch, m_s)
+        G, h, q, l, e = self.socConstraints(tSolve, goldSearch, m_s)
         A_mat, b      = self.equalityConstraints(tSolve, x_s)
         c             = np.zeros(11 * tSolve + 1)
         
         if goldSearch:
             #  Optimize slack variable; final distance is less than or equal to slack variable. 
-            if firstGoldSearch:              
-                c[-1] = 1
             solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                                   verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
-            finDist = linalg.norm(solution['x'][11 * (tSolve - 1) + 1:11 * (tSolve - 1) + 3])
-            return solution['info']['exitFlag'], finDist, solution['x'][-5]
+            fDist = np.linalg.norm(solution['x'][-9:-11])
+            return solution['info']['exitFlag'], solution['x'][-5], fDist
         
         else:
             # Optimize final fuel.
@@ -261,7 +267,7 @@ class PDG:
 
         return csc_matrix((A_val, (A_row, A_col)), shape=(11 + 7 * tSteps, 11 * tSteps + 1)), b.astype('float64')
 
-    def socConstraints(self, tSteps, firstGoldSearch, m_s):
+    def socConstraints(self, tSteps, goldSearch, m_s):
         # Creates linear, second order cone, and exponential cone constraints used 
         # in the ecos solver. These constraints are of the type, Gx <=_k h. First 
         # 2*tSteps rows in G are linear inequality constraints, the last 3*tSteps rows
@@ -326,16 +332,17 @@ class PDG:
         # must be less than slack variable. If no golden search, then final
         # distance must be less than distance found in golden search
 
-        if firstGoldSearch:    
+        if goldSearch:    
             G_row.extend([nRow, nRow + 1, nRow + 2])
             G_col.extend([11 * tSteps, nCol + 1, nCol + 2])
             G_val.extend([1, 1, 1])
+        
         else:
             G_row.extend([nRow + 1, nRow + 2])
             G_col.extend([nCol + 1, nCol + 2])
             G_val.extend([1, 1]) 
 
-            h[nRow] = self.dMax * 1.1
+            h[nRow] = self.dMax 
 
         G_val = [-g for g in G_val]     # g matrix has to be negated for ecos solver
 
