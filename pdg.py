@@ -19,7 +19,7 @@ class PDG:
 
         # user-defined hyperparameters
         self.tWait = 0
-        self.dMax  = None
+        self.dMax  = 5
 
     def init_constants(self, g, w):
         self.g = g
@@ -209,6 +209,7 @@ class PDG:
         
         if goldSearch:
             #  Optimize slack variable; final distance is less than or equal to slack variable. 
+            #c[-1] = 1
             solution = ecos.solve(c, G, h, {'l': l, 'q': q, 'e': e}, A=A_mat, b=b, 
                                   verbose=False, abstol=1e-4, feastol=1e-4, reltol=1e-4)
             fDist = np.linalg.norm(solution['x'][-9:-11])
