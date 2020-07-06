@@ -11,7 +11,7 @@ def process_time():
 
 	# makes all necessary connections with ksp
 	conn 	= krpc.connect(address='192.168.0.109')
-	sc 		= conn.space_center
+	sc 	= conn.space_center
 	vessel 	= sc.active_vessel
 	orbit 	= vessel.orbit
 	body 	= orbit.body
@@ -34,7 +34,7 @@ def process_time():
 	position_stream = conn.add_stream(vessel.position, pcpf)
 	velocity_stream = conn.add_stream(vessel.velocity, pcpf)
 	mass_stream 	= conn.add_stream(getattr, vessel, 'mass')
-	met_stream 		= conn.add_stream(getattr, vessel, 'met')
+	met_stream 	= conn.add_stream(getattr, vessel, 'met')
 	position_stream.start()
 	velocity_stream.start()
 	mass_stream.start()
@@ -52,7 +52,7 @@ def process_time():
 	vessel.control.throttle = 0
 	while velocity_stream()[1] > 0: pass
 
-	vessel.auto_pilot.sas 	= False
+	vessel.auto_pilot.sas = False
 	vessel.auto_pilot.engage()
 	vessel.auto_pilot.reference_frame = pcpf
 
