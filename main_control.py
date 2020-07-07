@@ -11,7 +11,7 @@ def process_time():
 
 	# makes all necessary connections with ksp
 	conn 	= krpc.connect(address='192.168.0.109')
-	sc 	= conn.space_center
+	sc 		= conn.space_center
 	vessel 	= sc.active_vessel
 	orbit 	= vessel.orbit
 	body 	= orbit.body
@@ -34,7 +34,7 @@ def process_time():
 	position_stream = conn.add_stream(vessel.position, pcpf)
 	velocity_stream = conn.add_stream(vessel.velocity, pcpf)
 	mass_stream 	= conn.add_stream(getattr, vessel, 'mass')
-	met_stream 	= conn.add_stream(getattr, vessel, 'met')
+	met_stream 		= conn.add_stream(getattr, vessel, 'met')
 	position_stream.start()
 	velocity_stream.start()
 	mass_stream.start()
@@ -48,16 +48,16 @@ def process_time():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 400: pass
+	while position_stream()[1] < 600: pass
 	vessel.control.throttle = 0
 	while velocity_stream()[1] > 0: pass
 
-	vessel.auto_pilot.sas = False
+	vessel.auto_pilot.sas 	= False
 	vessel.auto_pilot.engage()
 	vessel.auto_pilot.reference_frame = pcpf
 
 	print("Starting controlled descent")
-	startTime, n, tPrev, ns.eta = met_stream(), 0, -1, [0, 0, 0, 0]
+	t_start, n, tPrev, ns.eta = met_stream(), 0, -1, [0, 0, 0, 0]
 
 	# realSol and pdgSol are lists that keep track of the actual state vector at every time step and pdg-predicted 
 	# state vector at every time step. predTime is the time offset from the when pdg is called and when it finishes solving.
@@ -71,7 +71,7 @@ def process_time():
 		pos, velo, mass = position_stream(), velocity_stream(), mass_stream()
 		ns.predPos  = [pos[0]  + ns.predTime * velo[0],     pos[1]  + ns.predTime * velo[1],               pos[2]  + ns.predTime * velo[2]     ]
 		ns.predVelo = [velo[0] + ns.predTime * ns.eta[n+1], velo[1] + ns.predTime * (ns.eta[n] + ns.g[7]), velo[2] + ns.predTime * ns.eta[n+2] ]
-		#ns.nextEta  = ns.eta[n], ns.eta[n+1], ns.eta[n+2], ns.eta[n+3] 
+
 		# if there is a next eta, send the next eta, if no next eta, send current eta
 		nextEta = n + 4 * int(ns.predTime / ns.dt)
 		if nextEta < len(ns.eta):
@@ -87,14 +87,14 @@ def process_time():
 		# waits until a new eta has been found
 		if ns.new_eta == None: pass
 		else:
-			# if Guidance found a new path, reset startTime, n, and tPrev
+			# if Guidance found a new path, reset t_start, n, and tPrev
 			if ns.new_eta == True:
 				ns.new_eta = False
-				startTime, n, tPrev = met_stream(), 0, -1
+				t_start, n, tPrev = met_stream(), 0, -1
 
 			# if an entire time step has passed, move to next set of eta values
-			if int((met_stream() - startTime) / ns.dt) != tPrev: 
-				n, tPrev = n + 4, int((met_stream() - startTime) / ns.dt)
+			if int((met_stream() - t_start) / ns.dt) != tPrev: 
+				n, tPrev = n + 4, int((met_stream() - t_start) / ns.dt)
 
 				# adds real state vector and pdg state vector to realSol and pdgSol
 				pdgSol.extend(ns.sol[(n // 4) * 11 : (n // 4) * 11 + 11])
@@ -137,11 +137,11 @@ def process_guid():
 	# waits until process time tells it to start looking for a solution
 	while ns.startPDG == False: pass
 
-	pdg.init_constants(ns.g, ns.w)
+	pdg.INIT_CONSTANTS(ns.g, ns.w)
 	pdg.dt, ns.dt, ns.rho_2 = 1, 1, pdg.rho_2
-	pdg.update_state_vector(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
+	pdg.UPDATE_STATE_VECTOR(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
 
-	tSolve        = pdg.PDG(findTimeSolve=True)
+	tSolve        = pdg.MIN_DISTANCE()
 	print("Found tSolve")
 	pdg.dt, ns.dt = .1, .1
 	initialSol    = True
@@ -150,25 +150,24 @@ def process_guid():
 		# calls pdg to optimize fuel use and recalculate path, tells process time
 		# that there is a new solution
 
-		startTime = ns.met
+		t_pdgStart = ns.met
 
-		# update state vector
-		pdg.update_state_vector(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
+		pdg.UPDATE_STATE_VECTOR(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
 
-		# if time runs out, add two seconds to tSolve
 		if tSolve < 1.0: tSolve += 2.0
+
 		# if tSolve is less than 6.0, replace min distance constraint with 2x current
 		# distance, allows the vessel to do a vertical descent landing
 		if tSolve < 6.0:
 			pdg.dMax = 2 * np.linalg.norm(pdg.x[1:3])
 
-		ns.sol, ns.eta = pdg.PDG(tSolve=tSolve)
+		ns.sol, ns.eta = pdg.MIN_FUEL(tSolve=tSolve)
 		print("----", tSolve, pdg.dMax)
 
 		# tells process time that there is a new solution, decrement tSolve based on how much 
 		# time has passed, and adjust predTime based on how long the prev pdg took to solve
-		tSolve     -= ns.met - startTime
-		ns.predTime = ns.met - startTime
+		tSolve     -= ns.met - t_pdgStart
+		ns.predTime = ns.met - t_pdgStart
 		ns.new_eta  = True
 
 		if initialSol:
