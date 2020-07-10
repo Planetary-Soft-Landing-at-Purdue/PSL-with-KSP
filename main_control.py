@@ -56,10 +56,14 @@ def process_vess():
 
 	print("Starting controlled descent")
 
-	ns.predTime, ns.thrustVector, ns.nextEta = 1, [0, 0, 0, 0], [0, 0, 0, 0]
+	ns.predTime, ns.thrustVector, ns.nextEta = 1.3, [0, 0, 0, 0], [0, 0, 0, 0]
 
 	while ns.startPDG == False or ns.pos[1] > 2:
+		# adds current position, velocity, and mass to the shared namespace
 		ns.pos, ns.velo, ns.mass = position_stream(), velocity_stream(), mass_stream()
+
+		# sends predicted state vector for when pdg finishes its call to shared namespace, predTime
+		# is how long it takes for pdg to find a solution
 		ns.predPos  = [ns.pos[0]  + ns.predTime * ns.velo[0], 
 					   ns.pos[1]  + ns.predTime * ns.velo[1],            
 					   ns.pos[2]  + ns.predTime * ns.velo[2]]
@@ -72,6 +76,7 @@ def process_vess():
 
 		ns.startPDG = True
 
+		# sets vessel's direction and throttle
 		vessel.auto_pilot.target_direction = ns.thrustVector[1], ns.thrustVector[0], ns.thrustVector[2]
 		vessel.control.throttle 		   = ns.thrustVector[3] * (mass_stream() / ns.rho_2)
 
@@ -139,7 +144,7 @@ def process_guid():
 	tSolve         = pdg.MIN_DISTANCE()
 	print("Found tSolve")
 	pdg.dt, ns.dt  = .2, .2
-	count, initPdg = 0, []
+	count          = 0
 
 	while ns.startPDG:
 		# calls pdg to optimize fuel use and recalculate path, tells process time
@@ -152,10 +157,11 @@ def process_guid():
 		# if tSolve is less than 6.0, replace min distance constraint with 2x current
 		# distance, allows the vessel to do a vertical descent landing
 		if tSolve < 6.0:
-			if np.linalg.norm(pdg.x[1:3]) > pdg.dMax:
-				pdg.dMax = np.linalg.norm(pdg.x[1:3])
+			if 2 * np.linalg.norm(pdg.x[1:3]) > pdg.dMax:
+				pdg.dMax = 2 * np.linalg.norm(pdg.x[1:3])
 
 		ns.sol, ns.eta = pdg.MIN_FUEL(tSolve=tSolve)
+		#ns.sol, ns.eta = sol, eta
 		print("----", tSolve, pdg.dMax)
 
 		# tells process time that there is a new solution, decrement tSolve based on how much 
@@ -164,17 +170,9 @@ def process_guid():
 		ns.predTime = ns.met - t_pdgStart
 		ns.new_eta  = True
 
-		if count == 0:
-			initPdg = ns.sol
+		if count == 0: time.sleep(5)
 
 		count += 1
-
-	initPdgData = open("data/initial_pdg_data.txt", "w")
-	pdgStr = ''
-	for s in initPdg:
-		pdgStr += str(s) + ","
-	initPdgData.write(pdgStr)
-	initPdgData.close()
 
 if __name__ == '__main__':
 	lock = Lock()
