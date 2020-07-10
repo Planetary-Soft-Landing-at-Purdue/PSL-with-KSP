@@ -61,7 +61,7 @@ class PDG:
         fFuel_1 = self.MIN_DISTANCE(waitTime_1)
         fFuel_2 = self.MIN_DISTANCE(waitTime_2)
         
-        while abs(waitTime_1 - waitTime_2) > int(1/self.dt):       
+        while abs(waitTime_1 - waitTime_2) > int(1 / self.dt):       
             if fFuel_1 == None or (fFuel_2 != None and fFuel_1 > fFuel_2):
                 tLow = waitTime_1
                 waitTime_1, fFuel_1 = waitTime_2, fFuel_2
