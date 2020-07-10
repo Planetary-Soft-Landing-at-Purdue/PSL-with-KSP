@@ -19,6 +19,7 @@ class PDG:
 
         # user-defined hyperparameters
         self.waitTime = 0
+        self.predTime = 0
 
     def INIT_CONSTANTS(self, g, w):
         # takes planet specifc values, gravity and planet rotation rate, as inputs and initializes
@@ -35,13 +36,21 @@ class PDG:
         self.A = concatenate((self.A, s_W, np.zeros((1, 6))))
         self.A = concatenate((self.A, np.zeros((7, 1))), axis=1)
 
-    def UPDATE_STATE_VECTOR(self, position, velocity, mass, currentEta):
+    def PREDICT_STATE_VECTOR(self, predTime, position, velocity, mass, currentEta):
         # updates current state vector
-        self.m0 = mass
-        self.x  = [position[1], position[0], position[2],
-                   velocity[1], velocity[0], velocity[2],
-                   log(mass), currentEta[0], currentEta[1], currentEta[2], currentEta[3]
-                  ]
+        if predTime != self.predTime:
+            self.phi = self.mat_exp(self.dt)
+            self.psi = np.trapz([np.dot(self.mat_exp(.02 * tau), self.B) for tau in range(50)],
+                                axis=0, dx=.02 * predTime)
+            self.predTime = predTime
+
+        x_0   = np.array([position[1], position[0], position[2], 
+                          velocity[1], velocity[0], velocity[2], 
+                          log(mass)]) 
+
+        self.x  = np.dot(self.phi, x_0) + np.dot(self.psi, currentEta + np.array([self.g[7], 0, 0, 0]))
+        self.x  = np.concatenate((self.x, np.array(currentEta)))
+        self.m0 = exp(self.x[6])
 
     def SCHEDULE_PDG(self):
         '''
@@ -134,7 +143,7 @@ class PDG:
 
         if schedule_pdg: return fDist_1
         else:  
-            print("Maximum distance = ", fDist_1)
+            #print("Maximum distance = ", fDist_1)
             self.dMax = fDist_1          
             return t1 * self.dt
 
@@ -170,11 +179,11 @@ class PDG:
     def create_equations_of_motion(self):
         #  Define matrices used in ODE system for every timestep; used to construct equality matrix.
 
-        phi        = self.mat_exp(self.dt)
-        psi        = np.trapz([np.dot(self.mat_exp(.002 * tau * self.dt), self.B) for tau in range(500)],
-                                axis=0, dx=.002 * self.dt)
-        self.omega = concatenate((phi, psi), axis=1)
-        E = concatenate((-self.omega, np.identity(7), np.zeros((7, 4))), axis=1)
+        phi   = self.mat_exp(self.dt)
+        psi   = np.trapz([np.dot(self.mat_exp(.002 * tau * self.dt), self.B) for tau in range(500)],
+                            axis=0, dx=.002 * self.dt)
+        omega = concatenate((phi, psi), axis=1)
+        E     = concatenate((-omega, np.identity(7), np.zeros((7, 4))), axis=1)
 
         # rewrites matrices in csc format
         
@@ -186,7 +195,7 @@ class PDG:
                     self.colList.append(c)
                     self.valList.append(E[r, c])
         
-        self.bVect = np.dot(self.omega, self.g)
+        self.bVect = np.dot(omega, self.g)
 
     def mat_exp(self, x):
 
