@@ -29,12 +29,16 @@ def process_vess():
 	ns.g = [0, 0, 0, 0, 0, 0, 0, -body.surface_gravity, 0, 0, 0]
 	
 	# streams are set up to create efficient flow of data from ksp
-	position_stream = conn.add_stream(vessel.position, pcpf)
-	velocity_stream = conn.add_stream(vessel.velocity, pcpf)
-	mass_stream 	= conn.add_stream(getattr, vessel, 'mass')
-	met_stream 		= conn.add_stream(getattr, vessel, 'met')
+	position_stream  = conn.add_stream(vessel.position, pcpf)
+	velocity_stream  = conn.add_stream(vessel.velocity, pcpf)
+	direction_stream = conn.add_stream(vessel.direction, pcpf)
+	thrust_stream    = conn.add_stream(getattr, vessel, 'thrust')
+	mass_stream 	 = conn.add_stream(getattr, vessel, 'mass')
+	met_stream 		 = conn.add_stream(getattr, vessel, 'met')
 	position_stream.start()
 	velocity_stream.start()
+	direction_stream.start()
+	thrust_stream.start()
 	mass_stream.start()
 	met_stream.start()
 
@@ -46,8 +50,8 @@ def process_vess():
 	vessel.control.throttle = .6
 	vessel.control.activate_next_stage()
 
-	while position_stream()[1] < 400: pass
-	vessel.control.throttle = 0
+	while position_stream()[1] < 200: pass
+	vessel.control.throttle = .01
 	while velocity_stream()[1] > 0: pass
 
 	vessel.auto_pilot.sas 	= False
@@ -56,23 +60,15 @@ def process_vess():
 
 	print("Starting controlled descent")
 
-	ns.predTime, ns.thrustVector, ns.nextEta = 1.3, [0, 0, 0, 0], [0, 0, 0, 0]
+	ns.predTime, ns.thrustVector, ns.nextEta = 1.1, [0, 0, 0, 0], [0, 0, 0, 0]
 
 	while ns.startPDG == False or ns.pos[1] > 2:
 		# adds current position, velocity, and mass to the shared namespace
 		ns.pos, ns.velo, ns.mass = position_stream(), velocity_stream(), mass_stream()
-
-		# sends predicted state vector for when pdg finishes its call to shared namespace, predTime
-		# is how long it takes for pdg to find a solution
-		ns.predPos  = [ns.pos[0]  + ns.predTime * ns.velo[0], 
-					   ns.pos[1]  + ns.predTime * ns.velo[1],            
-					   ns.pos[2]  + ns.predTime * ns.velo[2]]
-		ns.predVelo = [ns.velo[0] + ns.predTime *  ns.thrustVector[1]           ,  
-					   ns.velo[1] + ns.predTime * (ns.thrustVector[0] + ns.g[7]), 
-					   ns.velo[2] + ns.predTime *  ns.thrustVector[2]           ]
- 
-		ns.predMass = mass_stream()
-		ns.met      = met_stream()
+		ns.direction = [thrust_stream() * direction_stream()[0] / mass_stream(), 
+					    thrust_stream() * direction_stream()[1] / mass_stream(), 
+					    thrust_stream() * direction_stream()[2] / mass_stream()]
+		ns.met = met_stream()
 
 		ns.startPDG = True
 
@@ -110,7 +106,7 @@ def process_time():
 		pdgSol.extend(ns.sol[(n // 4) * 11 : (n // 4) * 11 + 11])
 		realSol.extend([ns.pos[1], ns.pos[0], ns.pos[2], 
 			ns.velo[1], ns.velo[0], ns.velo[2], np.log(ns.mass),
-			ns.eta[n], ns.eta[n+1], ns.eta[n+2], ns.eta[n+3]])
+			ns.direction[1], ns.direction[0], ns.direction[2], ns.eta[n+3]])
 
 	realData = open("data/real_data.txt", "w")
 	realData.write(str(realSol))
@@ -139,7 +135,7 @@ def process_guid():
 
 	pdg.INIT_CONSTANTS(ns.g, ns.w)
 	pdg.dt, ns.dt, ns.rho_2 = 1, 1, pdg.rho_2
-	pdg.UPDATE_STATE_VECTOR(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
+	pdg.PREDICT_STATE_VECTOR(ns.predTime, ns.pos, ns.velo, ns.mass, ns.thrustVector)
 
 	tSolve         = pdg.MIN_DISTANCE()
 	print("Found tSolve")
@@ -152,7 +148,7 @@ def process_guid():
 
 		t_pdgStart = ns.met
 
-		pdg.UPDATE_STATE_VECTOR(ns.predPos, ns.predVelo, ns.predMass, ns.nextEta)
+		pdg.PREDICT_STATE_VECTOR(ns.predTime, ns.pos, ns.velo, ns.mass, ns.thrustVector)
 
 		# if tSolve is less than 6.0, replace min distance constraint with 2x current
 		# distance, allows the vessel to do a vertical descent landing
@@ -166,11 +162,10 @@ def process_guid():
 
 		# tells process time that there is a new solution, decrement tSolve based on how much 
 		# time has passed, and adjust predTime based on how long the prev pdg took to solve
-		tSolve     -= ns.met - t_pdgStart
-		ns.predTime = ns.met - t_pdgStart
 		ns.new_eta  = True
 
-		if count == 0: time.sleep(5)
+		tSolve     -= ns.met - t_pdgStart
+		ns.predTime = ns.met - t_pdgStart
 
 		count += 1
 
