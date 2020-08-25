@@ -11,11 +11,19 @@ M  = 5.9724e24
 m  = 100e3
 G  = 6.67430e-11
 mu = G * (m + M)
-g_0   = 9.81
+g_0   = 9.80665
 R_0   = 6378135
-p_s   = 1.01325e5
-rho_s = 1.2250
-T_s   = 288.16
+p_0   = 1.01325e5
+rho_0 = 1.2250
+T_0   = 288.16
+R_m   = 8.3144598
+M     = 0.0289644
+torr_c= 101325/760
+h_list   = np.array([0, 11000, 25000, 47000, 53000, 79000, 90000])
+T_list   = np.array([288.16, 216.65, 216.65, 282.66, 282.66, 165.66, 165.66])
+p_list   = np.array([1.01e5, 2.26e4, 1.8834e1, 8.3186e-1, 3.8903e-1, 7.9019e-3])
+rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-05, 3.351623e-6])
+a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
 R     = 287
 v_0   = 2e2
 dt=0.1
@@ -24,10 +32,50 @@ dt=0.1
 # energy-like variable used for path-finding
 def E(r,v): return mu/r-0.5*v**2
 
-def rho(h):
-    a=1
-    T=T_s+a*(h)
-    return rho_s*(T/T_s)**-(g_0/(a*R)+1)
+def floor(x, n):
+    if(x>n): 
+        return n
+    else: 
+        return x
+    
+def rho(h_g):
+    h=(R_0/(R_0+h_g))*h_g
+    if(h_g<h_list[1]):
+        T_1=T_list[0]
+        T=T_1+a_list[0]*(h-h_list[0])
+        return rho_list[0]*(T/T_1)**-(g_0/(a_list[0]*R)+1)
+    
+    elif(h<h_list[2]):
+        T_1=T_list[1]
+        return rho_list[1]*exp(-(g_0/(R*T_1))*(h-h_list[1]))
+    
+    elif(h<h_list[3]):
+        T_1=T_list[2]
+        T=T_1+a_list[2]*(h-h_list[2])
+        return rho_list[2]*(T/T_1)**-(g_0/(a_list[2]*R)+1)
+    
+    elif(h<h_list[4]):
+        T_1=T_list[3]
+        return rho_list[3]*exp(-(g_0/(R*T_1))*(h-h_list[3]))
+    
+    elif(h<h_list[5]):
+        T_1=T_list[4]
+        T=T_1+a_list[4]*(h-h_list[4])
+        return rho_list[4]*(T/T_1)**-(g_0/(a_list[4]*R)+1)
+    
+    elif(h<=h_list[6]):
+        T_1=T_list[5]
+        return rho_list[5]*exp(-(g_0/(R*T_1))*(h-h_list[5]))
+    
+    else:
+        T_1=T_list[6]
+        T=T_1+a_list[6]*(h-h_list[6])
+        return rho_list[6]*(T/T_1)**-(g_0/(a_list[6]*R)+1)
+        
+def beta_r(h_g):
+    h=(R_0/(R_0+h_g))*h_g
+    return 0
+    
 def CL(alpha,M): return 0.25
 def CD(alpha,M): return 0.5
 
@@ -51,8 +99,8 @@ def ode_e(y, e, Omega, sigma, m, A):
   r, theta, phi, gamma, psi, s = y
 
   V = (2 * (mu / r - e))**0.5
-  D = 0.5 * rho(r - R_0) * V**2 * A * 0.50 / m
-  L = 0.5 * rho(r - R_0) * V**2 * A * 0.25 / m
+  D = 0.5 * rho(r - R_0) * V**2 * A * 1 / m
+  L = 0.5 * rho(r - R_0) * V**2 * A * 0.5 / m
  
   dyde=[#r-dot
         (V * sin(gamma)) / (D * V),
@@ -126,7 +174,7 @@ def solve_for_sigma(sigma, y_0, greatCircle):
       sol[-1][5] (double): final range to desired location
 
   '''
-  A     = 10000         # surface area of vessel
+  A     = 49         # surface area of vessel
   Omega = 7.2921159e-5  # Earth's rotating rate
 
   # initial and final conditions for the vessel
@@ -140,6 +188,8 @@ def solve_for_sigma(sigma, y_0, greatCircle):
   # at each step and the final great circle range
   e   = np.linspace(e_0, e_f, 1000)
   sol = np.array(odeint(ode_e, y_0, e, args=(Omega, sigma, m, A)))
+  #sol[:,0]=sol[:,0]/R_0
+  #sol[:,3]=sol[:,3]/((R_0*g_0)**0.5)
 
   # finds the time elapsed for this descent
 
@@ -218,6 +268,9 @@ t, rList, sList = find_time_descent(y_0, sol[-1])
 t=t*dt
 
 print(t)
+
+def find_correction():
+    return 0
 
 def printPath(sol, rList, sList):
   # plots the vessel's path, along with the Earth's surface
