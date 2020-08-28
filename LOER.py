@@ -31,7 +31,7 @@ Omega = 7.2921159e-5  # Earth's rotating rate
 m     = 29e3
 A     = 752.6
 
-#mu= 1
+#mu = 1
 G  = 6.67430e-11
 M  = 5.9724e24
 mu = G * (m + M)
@@ -45,8 +45,6 @@ T_list   = np.array([288.16, 216.65, 216.65, 282.66, 282.66, 165.66, 165.66])
 p_list   = np.array([1.01e5, 2.26e4, 1.8834e1, 8.3186e-1, 3.8903e-1, 7.9019e-3])
 rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-05, 3.351623e-6])
 a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
-
-rhoList = []
 
 def rho(h_g):
     #h_g = h_g * R_0
@@ -100,10 +98,10 @@ def find_dyde(y, e, Omega, sigma, m, A):
     r, theta, phi, gamma, psi, s = y
 
     V = sqrt(2 * (mu / r - e))
-    D = 0.5 * rho(r - 1) * V**2 * A * 1
-    L = 0.5 * rho(r - 1) * V**2 * A * 0.5
-    print(mu, r, e, V)
 
+    D = 0.5 * rho(r - R_0) * V**2 * A * 1  
+    L = 0.5 * rho(r - R_0) * V**2 * A * 0.5
+    #print(D, L, mu, r, e, V)
     #print(e, E(r, V))    
 
     #print(L, r)
@@ -132,22 +130,23 @@ def find_dyde(y, e, Omega, sigma, m, A):
 def find_flight_path(sigma, y_0):
     # initial and final conditions for the vessel
     r_0 = y_0[0]
-    v_0 = 7500 / sqrt(9.81 * R_0)
+    v_0 = 7500
     e_0 = E(r_0, v_0)
-    r_f = 1
-    v_f = 255 / sqrt(9.81 * R_0)
+    r_f = R_0
+    v_f = 252
     e_f = E(r_f, v_f)
     
-    #print(e_0, r_0, v_0)
-    #print(e_f, r_f, v_f, '\n')
+    print(e_0, r_0, v_0)
+    print(e_f, r_f, v_f, '\n')
     
-    eList, de = np.linspace(e_0, e_f, 100), (e_f - e_0) / 100
+    eList, de = np.linspace(e_0, e_f, 1000), (e_f - e_0) / 1000
     #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
     flightPath = []
     
     for e in eList:
         dyde = find_dyde(y_0, e, Omega, sigma, m, A)
         y_0  = [y_0[i] + dyde[i] * de for i in range(6)]
+        print(y_0[0])
         flightPath.append(y_0)
         #print(np.array(y_0).round(3))
 
@@ -193,33 +192,20 @@ def graph_flight_path(flightPath, figureNum=0):
     plt.savefig('flighPath' + str(figureNum) + '.png')
  
 if __name__ == "__main__":
-    r     = (2e4 + R_0) / R_0   # radius
+    r     = R_0 + 20000         # radius
     theta = 0                   # longitude
     phi   = 0                   # latitude
-    gamma = -pi / 16            # flight-path angle
+    gamma = pi                  # flight-path angle
     psi   = 3 * pi / 2          # heading angle (clockwise from north)
     s     = pi / 64             # great circle angle
     
     y_0 = [r, theta, phi, gamma, psi, s]    
-    sigma      = optimize_sigma(y_0)
-    flightPath = find_flight_path(sigma, y_0)
+    #sigma      = optimize_sigma(y_0)
+    #flightPath = find_flight_path(sigma, y_0)
     
-    graph_flight_path(flightPath)  
-    print("Sigma: ", sigma)
-    #graph_flight_path(find_flight_path(18 * pi/64, y_0), figureNum=1)
+    #graph_flight_path(flightPath)  
+    #print("Sigma: ", sigma)
+    graph_flight_path(find_flight_path(18 * pi/64, y_0), figureNum=1)
     #graph_flight_path(find_flight_path(pi/2, y_0), figureNum=2)
     
-    # r_0 = y_0[0]
-    # v_0 = 7500 / sqrt(9.81 * R_0)
-    # e_0 = E(r_0, v_0)
-    # r_f = 1
-    # v_f = 255 / sqrt(9.81 * R_0)
-    # e_f = E(r_f, v_f)
-    
-    # de = np.linspace(e_0, e_f, 100)
-    # x1 = range(len(de))
-    # x2 = range(20000)
-    # plt.figure(11)
-    # plt.plot(x1, de, x2, [rho(r) for r in range(20000)])
-    # plt.savefig("air pressure")
 
