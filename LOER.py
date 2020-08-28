@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 Omega = 7.2921159e-5  # Earth's rotating rate
 m     = 29e3
-A     = 752.6
+A     = 50
 
 #mu = 1
 G  = 6.67430e-11
@@ -47,9 +47,7 @@ rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-0
 a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
 
 def rho(h_g):
-    #h_g = h_g * R_0
     h   = (R_0 / (R_0 + h_g)) * h_g
-    #h   = h_g
 
     if(h_g < h_list[1]):
         T_1 = T_list[0]
@@ -99,31 +97,34 @@ def find_dyde(y, e, Omega, sigma, m, A):
 
     V = sqrt(2 * (mu / r - e))
 
-    D = 0.5 * rho(r - R_0) * V**2 * A * 1  
+    D = 0.5 * rho(r - R_0) * V**2 * A * 1   
     L = 0.5 * rho(r - R_0) * V**2 * A * 0.5
+    #print(round(L), round(r), round(R_0), round(V), round(A), rho(r - R_0))
+    #print(round(V), round(L), round(g_0 * m), round(r), rho(r - R_0))
+    #print(round(r - R_0), rho(r - R_0), (V * sin(gamma)) / D * V / sqrt(R_0 / g_0))
     #print(D, L, mu, r, e, V)
     #print(e, E(r, V))    
-
+    print(round(e), round(r - R_0), gamma)
     #print(L, r)
     #print(gamma)
     #print(round(D, 5), round(L, 5))
     #print(round(V * sin(gamma), 5), round(V, 5), round(r, 5), round(s, 5), e)
     
     ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
-    dyde=[(V * sin(gamma)) / (D * V),
+    scale = D * V / sqrt(R_0 / g_0)
+    dyde=[(V * sin(gamma)) / scale,
           
-          (V * cos(gamma) * sin(psi) / (r * cos(phi))) / (D * V),
+          (V * cos(gamma) * sin(psi) / (r * cos(phi))) / scale,
           
-          (V * cos(gamma) * cos(psi) / r) / (D * V),
+          (V * cos(gamma) * cos(psi) / r) / scale,
           
-          (V**-1 * (L * cos(sigma) + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * cos(phi) * sin(psi)   
-            + Omega**2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / (D * V),
+          (1 / V * (L * cos(sigma) / m + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)   
+            + Omega**2 * r * cos(phi) * (cos(gamma) * cos(phi) - sin(gamma) * cos(psi) * sin(phi)))) / scale, #sign of sin(gamma) is suspect
           
-          (V**-1 * ((L * sin(sigma) / cos(gamma)) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)      
-            -2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi)) 
-            + Omega**2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))) / (D * V),
-          
-          (-V * cos(gamma) / r) / (D * V)
+          (1 / V * ( (L * sin(sigma) / (m * cos(gamma)) ) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)      
+            - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi)) 
+            + Omega**2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))) / scale, #r term is suspect
+          (-V * cos(gamma) / r) / scale
         ]
     return dyde
 
@@ -133,7 +134,7 @@ def find_flight_path(sigma, y_0):
     v_0 = 7500
     e_0 = E(r_0, v_0)
     r_f = R_0
-    v_f = 252
+    v_f = 250
     e_f = E(r_f, v_f)
     
     print(e_0, r_0, v_0)
@@ -146,7 +147,7 @@ def find_flight_path(sigma, y_0):
     for e in eList:
         dyde = find_dyde(y_0, e, Omega, sigma, m, A)
         y_0  = [y_0[i] + dyde[i] * de for i in range(6)]
-        print(y_0[0])
+        
         flightPath.append(y_0)
         #print(np.array(y_0).round(3))
 
@@ -192,11 +193,11 @@ def graph_flight_path(flightPath, figureNum=0):
     plt.savefig('flighPath' + str(figureNum) + '.png')
  
 if __name__ == "__main__":
-    r     = R_0 + 20000         # radius
+    r     = R_0 + 70000         # radius
     theta = 0                   # longitude
     phi   = 0                   # latitude
-    gamma = pi                  # flight-path angle
-    psi   = 3 * pi / 2          # heading angle (clockwise from north)
+    gamma = -pi / 8             # flight-path angle
+    psi   = 0                   # heading angle (clockwise from north)
     s     = pi / 64             # great circle angle
     
     y_0 = [r, theta, phi, gamma, psi, s]    
@@ -205,7 +206,7 @@ if __name__ == "__main__":
     
     #graph_flight_path(flightPath)  
     #print("Sigma: ", sigma)
-    graph_flight_path(find_flight_path(18 * pi/64, y_0), figureNum=1)
+    graph_flight_path(find_flight_path(pi / 4, y_0), figureNum=1)
     #graph_flight_path(find_flight_path(pi/2, y_0), figureNum=2)
     
 
