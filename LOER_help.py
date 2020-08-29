@@ -73,14 +73,14 @@ def CL(alpha, M): return 0.25
 def CD(alpha, M): return 0.5
 
 def find_dyde(y, e, Omega, sigma, m, A):
-    r, theta, phi, gamma, psi, s = y
+    r, theta, phi, V, gamma, psi = y
 
-    V = sqrt(2 * (1 / r - e))
+    #V = sqrt(2 * (1 / r - e))
 
-    D = 0.5 * rho(r - 1) * V**2 * A * 1 * R_0
-    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 * R_0
+    D = 0.5 * rho(r - 1) * V**2 * A * 1 * 0
+    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 * 0
 
-    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s, L, D))
+    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s))
 
     # scale = D * V / sqrt(R_0 / g_0)
     # dyde=[(V * sin(gamma)),
@@ -100,21 +100,22 @@ def find_dyde(y, e, Omega, sigma, m, A):
     #     ]
     ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
     #scale = D * V / sqrt(R_0 / g_0)
-    scale = D * V
-    dyde = [(V * sin(gamma)) / scale,
+    #scale = D * V
+    dyde = [(V * sin(gamma)),
             
-            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))) / scale,
+            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))),
             
-            ((V * cos(gamma) * cos(psi)) / r) / scale,
+            ((V * cos(gamma) * cos(psi)) / r),
                 
+            (-D - (sin(gamma) / r ** 2) + Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))),
+            
             ((1 / V) * (L * cos(sigma) + (V ** 2 - 1 / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
-                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / scale,
+                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))),
             
             ((1 / V) * (L * sin(sigma) / cos(gamma) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
                 - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
-                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))) / scale,
-            
-            (-V * cos(gamma) / r) / scale
+                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))))
+        
             ]
     
     return dyde
@@ -122,16 +123,18 @@ def find_dyde(y, e, Omega, sigma, m, A):
 def find_flight_path(sigma, y_0):
     # initial and final conditions for the vessel
     r_0 = y_0[0]
-    v_0 = 7500 / sqrt(g_0 * R_0)
+    v_0 = 0 / sqrt(g_0 * R_0)
     e_0 = E(r_0, v_0)
     r_f = 1 
-    v_f = 250 / sqrt(g_0 * R_0)
+    v_f = 0 / sqrt(g_0 * R_0)
     e_f = E(r_f, v_f)
 
+    t_0 = 0
+    t_f = 1000 / sqrt(R_0 / g_0)
     print(e_0, r_0, v_0)
     print(e_f, r_f, v_f, '\n')
     
-    eList, de = np.linspace(e_0, e_f, 100), (e_f - e_0) / 100
+    eList, de = np.linspace(t_0, t_f, 1000), (t_f - t_0) / 100
     #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
     flightPath = []
     
@@ -187,11 +190,12 @@ if __name__ == "__main__":
     r     = ((R_0 + 70000) / R_0) # radius
     theta = 0                     # longitude
     phi   = 0                     # latitude
+    V     = 7500 / sqrt(g_0 * R_0)
     gamma = -pi / 16              # flight-path angle
     psi   = 0                     # heading angle (clockwise from north)
     s     = .0038                 # great circle angle
     
-    y_0 = [r, theta, phi, gamma, psi, s]    
+    y_0 = [r, theta, phi, V, gamma, psi]    
     #sigma      = optimize_sigma(y_0)
     #flightPath = find_flight_path(sigma, y_0)
     

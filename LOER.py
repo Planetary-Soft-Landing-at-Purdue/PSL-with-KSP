@@ -5,27 +5,6 @@ import scipy
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 
-# constants used for the algorithm
-
-# M  = 5.9724e24
-# m  = 29e3
-# G  = 6.67430e-11
-# mu = G * (m + M)
-# g_0    = 9.80665
-# R_0    = 6378135
-# p_0    = 1.01325e5
-# rho_0  = 1.2250
-# T_0    = 288.16
-# R_m    = 8.3144598
-# torr_c = 101325 / 760
-# h_list   = np.array([0, 11000, 25000, 47000, 53000, 79000, 90000])
-# T_list   = np.array([288.16, 216.65, 216.65, 282.66, 282.66, 165.66, 165.66])
-# p_list   = np.array([1.01e5, 2.26e4, 1.8834e1, 8.3186e-1, 3.8903e-1, 7.9019e-3])
-# rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-05, 3.351623e-6])
-# a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
-# R     = 287
-# dt    = 0.1
-# A     = 49            # surface area of vessel
 
 Omega = 7.2921159e-5  # Earth's rotating rate
 m     = 29e3
@@ -34,7 +13,7 @@ A     = 50
 #mu = 1
 G  = 6.67430e-11
 M  = 5.9724e24
-mu = G * (m + M)
+mu = G * M
 R_0 = 6378135
 g_0 = 9.80665
 
@@ -98,10 +77,10 @@ def find_dyde(y, e, Omega, sigma, m, A):
 
     V = sqrt(2 * (1 / r - e))
 
-    D = 0.5 * rho(r - 1) * V**2 * A * 1   / (m * g_0)
-    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 / (m * g_0) 
+    D = 0.5 * rho(r - 1) * V**2 * A * 1 * R_0
+    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 * R_0
 
-    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s))
+    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s, L, D))
 
     # scale = D * V / sqrt(R_0 / g_0)
     # dyde=[(V * sin(gamma)),
@@ -121,24 +100,21 @@ def find_dyde(y, e, Omega, sigma, m, A):
     #     ]
     ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
     #scale = D * V / sqrt(R_0 / g_0)
-    #scale = D * V
-    dyde = [(V * sin(gamma)),
+    scale = D * V
+    dyde = [(V * sin(gamma)) / scale,
             
-            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))),
+            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))) / scale,
             
-            ((V * cos(gamma) * cos(psi)) / r),
-            
-            (-D - (sin(gamma) / r**2) +
-                Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))),
+            ((V * cos(gamma) * cos(psi)) / r) / scale,
                 
             ((1 / V) * (L * cos(sigma) + (V ** 2 - 1 / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
-                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))),
+                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / scale,
             
             ((1 / V) * (L * sin(sigma) / cos(gamma) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
                 - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
-                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))),
+                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))) / scale,
             
-            (-V * cos(gamma) / r)
+            (-V * cos(gamma) / r) / scale
             ]
     
     return dyde
@@ -155,7 +131,7 @@ def find_flight_path(sigma, y_0):
     print(e_0, r_0, v_0)
     print(e_f, r_f, v_f, '\n')
     
-    eList, de = np.linspace(e_0, e_f, 10000), (e_f - e_0) / 10000
+    eList, de = np.linspace(e_0, e_f, 100), (e_f - e_0) / 100
     #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
     flightPath = []
     
