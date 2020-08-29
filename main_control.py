@@ -2,13 +2,13 @@ from multiprocessing import Process, Manager, Lock
 import krpc, time, pdg, math
 import numpy as np
 
-def process_time():
+def process_time(ns):
 	global conn, sc, vessel, orbit, body, bcbf, bci, omega, pcpf
 
 	ns.startPDG = False
 
 	# makes all necessary connections with ksp
-	conn 	= krpc.connect(address='192.168.0.109')
+	conn 	= krpc.connect(address='128.211.208.159')
 	sc 		= conn.space_center
 	vessel 	= sc.active_vessel
 	orbit 	= vessel.orbit
@@ -82,12 +82,13 @@ def process_time():
 	ns.startPDG = False
 	vessel.control.throttle = 0
 
-def process_guid():
+def process_guid(ns):
 	global tWait, tSolve, dMax, dt
 
 	ns.dt 		 = 1
 	ns.new_eta 	 = None
 
+	time.sleep(1)
 	while ns.startPDG == False: pass
 
 	timeWait = pdg.PDG(ns.dt, ns.stateVect, initialSearch=True)
@@ -121,8 +122,8 @@ if __name__ == '__main__':
 	ns = manager.Namespace()
 
 	#initiating and starting two processes
-	Process_time = Process(target=process_time, name='TIME')
-	Process_guid = Process(target=process_guid, name='GUID')
+	Process_time = Process(target=process_time, name='TIME', args=(ns,))
+	Process_guid = Process(target=process_guid, name='GUID', args=(ns,))
 
 	Process_time.start()
 	Process_guid.start()
