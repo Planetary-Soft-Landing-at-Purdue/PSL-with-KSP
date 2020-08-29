@@ -47,6 +47,7 @@ rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-0
 a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
 
 def rho(h_g):
+    h_g = h_g * R_0
     h   = (R_0 / (R_0 + h_g)) * h_g
 
     if(h_g < h_list[1]):
@@ -84,7 +85,7 @@ def rho(h_g):
 def beta_r(h_g): return (rho(h_g) - rho(h_g - 1)) / (1 * rho(h_g))     
  
 # energy-like variable used for path-finding
-def E(r, v): return (mu / r) - (0.5 * v ** 2)
+def E(r, v): return (1 / r) - (0.5 * v ** 2)
 
 def floor(x, n): return n if x > n else x
 
@@ -95,52 +96,66 @@ def CD(alpha, M): return 0.5
 def find_dyde(y, e, Omega, sigma, m, A):
     r, theta, phi, gamma, psi, s = y
 
-    V = sqrt(2 * (mu / r - e))
+    V = sqrt(2 * (1 / r - e))
 
-    D = 0.5 * rho(r - R_0) * V**2 * A * 1   
-    L = 0.5 * rho(r - R_0) * V**2 * A * 0.5
-    #print(round(L), round(r), round(R_0), round(V), round(A), rho(r - R_0))
-    #print(round(V), round(L), round(g_0 * m), round(r), rho(r - R_0))
-    #print(round(r - R_0), rho(r - R_0), (V * sin(gamma)) / D * V / sqrt(R_0 / g_0))
-    #print(D, L, mu, r, e, V)
-    #print(e, E(r, V))    
-    print(round(e), round(r - R_0), gamma)
-    #print(L, r)
-    #print(gamma)
-    #print(round(D, 5), round(L, 5))
-    #print(round(V * sin(gamma), 5), round(V, 5), round(r, 5), round(s, 5), e)
-    
+    D = 0.5 * rho(r - 1) * V**2 * A * 1   / (m * g_0)
+    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 / (m * g_0) 
+
+    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s))
+
+    # scale = D * V / sqrt(R_0 / g_0)
+    # dyde=[(V * sin(gamma)),
+          
+    #       (V * cos(gamma) * sin(psi) / (r * cos(phi))),
+          
+    #       (V * cos(gamma) * cos(psi) / r),
+          
+    #       (1 / V * (L * cos(sigma) / m + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)   
+    #         + Omega**2 * r * cos(phi) * (cos(gamma) * cos(phi) - sin(gamma) * cos(psi) * sin(phi)))), #sign of sin(gamma) is suspect
+          
+    #       (1 / V * ( (L * sin(sigma) / (m * cos(gamma)) ) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)      
+    #         - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi)) 
+    #         + Omega**2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))), #r term is suspect
+          
+    #       (-V * cos(gamma) / r)
+    #     ]
     ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
-    scale = D * V / sqrt(R_0 / g_0)
-    dyde=[(V * sin(gamma)) / scale,
-          
-          (V * cos(gamma) * sin(psi) / (r * cos(phi))) / scale,
-          
-          (V * cos(gamma) * cos(psi) / r) / scale,
-          
-          (1 / V * (L * cos(sigma) / m + (V**2 - mu / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)   
-            + Omega**2 * r * cos(phi) * (cos(gamma) * cos(phi) - sin(gamma) * cos(psi) * sin(phi)))) / scale, #sign of sin(gamma) is suspect
-          
-          (1 / V * ( (L * sin(sigma) / (m * cos(gamma)) ) + V**2/ r * cos(gamma) * sin(psi) * tan(phi)      
-            - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi)) 
-            + Omega**2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))) / scale, #r term is suspect
-          (-V * cos(gamma) / r) / scale
-        ]
+    #scale = D * V / sqrt(R_0 / g_0)
+    #scale = D * V
+    dyde = [(V * sin(gamma)),
+            
+            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))),
+            
+            ((V * cos(gamma) * cos(psi)) / r),
+            
+            (-D - (sin(gamma) / r**2) +
+                Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))),
+                
+            ((1 / V) * (L * cos(sigma) + (V ** 2 - 1 / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
+                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))),
+            
+            ((1 / V) * (L * sin(sigma) / cos(gamma) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
+                - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
+                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))),
+            
+            (-V * cos(gamma) / r)
+            ]
+    
     return dyde
 
 def find_flight_path(sigma, y_0):
     # initial and final conditions for the vessel
     r_0 = y_0[0]
-    v_0 = 7500
+    v_0 = 7500 / sqrt(g_0 * R_0)
     e_0 = E(r_0, v_0)
-    r_f = R_0
-    v_f = 250
+    r_f = 1 
+    v_f = 250 / sqrt(g_0 * R_0)
     e_f = E(r_f, v_f)
-    
+
     print(e_0, r_0, v_0)
     print(e_f, r_f, v_f, '\n')
     
-    eList, de = np.linspace(e_0, e_f, 1000), (e_f - e_0) / 1000
+    eList, de = np.linspace(e_0, e_f, 10000), (e_f - e_0) / 10000
     #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
     flightPath = []
     
@@ -193,12 +208,12 @@ def graph_flight_path(flightPath, figureNum=0):
     plt.savefig('flighPath' + str(figureNum) + '.png')
  
 if __name__ == "__main__":
-    r     = R_0 + 70000         # radius
-    theta = 0                   # longitude
-    phi   = 0                   # latitude
-    gamma = -pi / 8             # flight-path angle
-    psi   = 0                   # heading angle (clockwise from north)
-    s     = pi / 64             # great circle angle
+    r     = ((R_0 + 70000) / R_0) # radius
+    theta = 0                     # longitude
+    phi   = 0                     # latitude
+    gamma = -pi / 16              # flight-path angle
+    psi   = 0                     # heading angle (clockwise from north)
+    s     = .0038                 # great circle angle
     
     y_0 = [r, theta, phi, gamma, psi, s]    
     #sigma      = optimize_sigma(y_0)
@@ -206,7 +221,7 @@ if __name__ == "__main__":
     
     #graph_flight_path(flightPath)  
     #print("Sigma: ", sigma)
-    graph_flight_path(find_flight_path(pi / 4, y_0), figureNum=1)
+    graph_flight_path(find_flight_path(pi / 16, y_0), figureNum=1)
     #graph_flight_path(find_flight_path(pi/2, y_0), figureNum=2)
     
 
