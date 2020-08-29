@@ -13,7 +13,7 @@ A     = 50
 #mu = 1
 G  = 6.67430e-11
 M  = 5.9724e24
-mu = G * M
+mu = G * (M+m)
 R_0 = 6378135
 g_0 = 9.80665
 
@@ -26,7 +26,6 @@ rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-0
 a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
 
 def rho(h_g):
-    h_g = h_g * R_0
     h   = (R_0 / (R_0 + h_g)) * h_g
 
     if(h_g < h_list[1]):
@@ -64,7 +63,7 @@ def rho(h_g):
 def beta_r(h_g): return (rho(h_g) - rho(h_g - 1)) / (1 * rho(h_g))     
  
 # energy-like variable used for path-finding
-def E(r, v): return (1 / r) - (0.5 * v ** 2)
+def E(r, v): return (mu / r) - (0.5 * v ** 2)
 
 def floor(x, n): return n if x > n else x
 
@@ -73,14 +72,14 @@ def CL(alpha, M): return 0.25
 def CD(alpha, M): return 0.5
 
 def find_dyde(y, e, Omega, sigma, m, A):
-    r, theta, phi, V, gamma, psi = y
+    r, theta, phi, gamma, psi, s = y
 
-    #V = sqrt(2 * (1 / r - e))
+    V = sqrt(2 * (mu / r - e))
 
-    D = 0.5 * rho(r - 1) * V**2 * A * 1 * 0
-    L = 0.5 * rho(r - 1) * V**2 * A * 0.5 * 0
-
-    print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r, theta, phi, gamma, psi, s))
+    D = 0.5 * rho(r - R_0) * V**2 * A * 2
+    L = 0.5 * rho(r - R_0) * V**2 * A * 0.25
+    #print(L, g_0 * m, V)
+    #print('%5.3f %5.3f %5.3f %5.3f %5.3f %5.3f %5.3f' % (r/R_0, theta, V, phi, gamma, psi, L))
 
     # scale = D * V / sqrt(R_0 / g_0)
     # dyde=[(V * sin(gamma)),
@@ -100,21 +99,23 @@ def find_dyde(y, e, Omega, sigma, m, A):
     #     ]
     ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
     #scale = D * V / sqrt(R_0 / g_0)
-    #scale = D * V
-    dyde = [(V * sin(gamma)),
+    scale = D * V / m
+    dyde = [(V * sin(gamma)) / scale,
             
-            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))),
+            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))) / scale,
             
-            ((V * cos(gamma) * cos(psi)) / r),
+            ((V * cos(gamma) * cos(psi)) / r) / scale,
                 
-            (-D - (sin(gamma) / r ** 2) + Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))),
+            #(-D / m - (mu * sin(gamma) / (r ** 2)) + Omega**2 * r * cos(phi) * (sin(gamma) * cos(phi) - cos(gamma) * sin(phi) * cos(psi))) / scale,
             
-            ((1 / V) * (L * cos(sigma) + (V ** 2 - 1 / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
-                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))),
+            ((1 / V) * (L * cos(sigma) / m + (V ** 2 - mu / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
+                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / scale,
             
-            ((1 / V) * (L * sin(sigma) / cos(gamma) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
+            ((1 / V) * (L * sin(sigma) / (cos(gamma) * m) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
                 - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
-                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi))))
+                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))) / scale,
+            
+            (-V * cos(gamma) / r) / scale
         
             ]
     
@@ -123,27 +124,27 @@ def find_dyde(y, e, Omega, sigma, m, A):
 def find_flight_path(sigma, y_0):
     # initial and final conditions for the vessel
     r_0 = y_0[0]
-    v_0 = 0 / sqrt(g_0 * R_0)
+    v_0 = 7500
     e_0 = E(r_0, v_0)
-    r_f = 1 
-    v_f = 0 / sqrt(g_0 * R_0)
+    r_f = R_0 + 10e3
+    v_f = 250
     e_f = E(r_f, v_f)
 
     t_0 = 0
-    t_f = 1000 / sqrt(R_0 / g_0)
+    t_f = 150
     print(e_0, r_0, v_0)
     print(e_f, r_f, v_f, '\n')
     
-    eList, de = np.linspace(t_0, t_f, 1000), (t_f - t_0) / 100
-    #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
-    flightPath = []
+    eList, de = np.linspace(e_0, e_f, 200), (e_f - e_0) / 200
+    flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
+    '''flightPath = []
     
     for e in eList:
         dyde = find_dyde(y_0, e, Omega, sigma, m, A)
         y_0  = [y_0[i] + dyde[i] * de for i in range(6)]
         
         flightPath.append(y_0)
-        #print(np.array(y_0).round(3))
+        #print(np.array(y_0).round(3))'''
 
     return flightPath
 
@@ -169,14 +170,14 @@ def optimize_sigma(y_0):
 def graph_flight_path(flightPath, figureNum=0):
     xList, yList = [], []
     for stateVect in flightPath:
-        r, s = stateVect[0] * R_0, stateVect[5]
+        r, s = stateVect[0], stateVect[5]
         x, y = r * sin(s), r * cos(s)
 
         xList.append(x)
         yList.append(y)
 
     earthX, earthY = [], []
-    sList = np.linspace(0, pi/32, len(xList))
+    sList = np.linspace(0, pi/8, len(xList))
     for d in range(len(sList)):
         x, y = R_0 * sin(sList[d]), R_0 * cos(sList[d])
         earthX.append(x)
@@ -187,15 +188,15 @@ def graph_flight_path(flightPath, figureNum=0):
     plt.savefig('flighPath' + str(figureNum) + '.png')
  
 if __name__ == "__main__":
-    r     = ((R_0 + 70000) / R_0) # radius
+    r     = ((R_0 + 121000)) # radius
     theta = 0                     # longitude
     phi   = 0                     # latitude
-    V     = 7500 / sqrt(g_0 * R_0)
-    gamma = -pi / 16              # flight-path angle
+    V     = 7500
+    gamma = -pi / 32              # flight-path angle
     psi   = 0                     # heading angle (clockwise from north)
-    s     = .0038                 # great circle angle
+    s     = 2300                 # great circle angle
     
-    y_0 = [r, theta, phi, V, gamma, psi]    
+    y_0 = [r, theta, phi, gamma, psi, s]    
     #sigma      = optimize_sigma(y_0)
     #flightPath = find_flight_path(sigma, y_0)
     
