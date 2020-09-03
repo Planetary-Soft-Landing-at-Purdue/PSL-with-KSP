@@ -4,16 +4,8 @@ from math import tan, pi, exp, cos, log, factorial, sqrt, sin
 import scipy
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
+import krpc
 
-
-Omega = 7.2921159e-5  # Earth's rotating rate
-m     = 29e3
-A     = 50
-
-#mu = 1
-G  = 6.67430e-11
-M  = 5.9724e24
-mu = G * (M+m)
 R_0 = 6378135
 g_0 = 9.80665
 
@@ -24,6 +16,8 @@ T_list   = np.array([288.16, 216.65, 216.65, 282.66, 282.66, 165.66, 165.66])
 p_list   = np.array([1.01e5, 2.26e4, 1.8834e1, 8.3186e-1, 3.8903e-1, 7.9019e-3])
 rho_list = np.array([1.225, 3.648e-1, 4.0639e-2, 1.4757e-3, 7.1478e-4, 2.5029e-05, 3.351623e-6])
 a_list   = np.array([-6.5e-3, 0, 3e-3, 0,-4.5e-3, 0, 4e-3])
+
+def floor(x, n): return n if x > n else x
 
 def rho(h_g):
     h   = (R_0 / (R_0 + h_g)) * h_g
@@ -60,87 +54,95 @@ def rho(h_g):
         T   = T_1 + a_list[6] * (h - h_list[6])
         return rho_list[6] * (T / T_1) ** -(g_0 / (a_list[6] * R) + 1)
 
-def beta_r(h_g): return (rho(h_g) - rho(h_g - 1)) / (1 * rho(h_g))     
- 
 # energy-like variable used for path-finding
 def E(r, v): return (mu / r) - (0.5 * v ** 2)
 
-def floor(x, n): return n if x > n else x
+class LOER:
+    def __init__(self, vessel):
+        self.Omega = 7.2921159e-5  # Earth's rotating rate
+        self.m     = vessel.mass
+        self.mu    = self.calculate_mu()
 
-def CL(alpha, M): return 0.25
+    def calculate_mu(self):
+        G  = 6.67430e-11
+        M  = 5.9724e24
+        return G * (M + self.m)
 
-def CD(alpha, M): return 0.5
+    def findSurfaceArea(self, sigma):
+        angleOfAttack = self.vessel.flight().angle_of_attack
+        return 43 + 152 * abs(sin(angleOfAttack))
 
-def find_dyde(y, e, Omega, sigma, m, A):
-    r, theta, phi, gamma, psi, s = y
+    def find_dyde(self, y, e, sigma):
+        r, theta, phi, gamma, psi, s = y
 
-    V = sqrt(2 * (mu / r - e))
+        V = sqrt(2 * (self.mu / r - e))
 
-    D = 0.5 * rho(r - R_0) * V**2 * A * 1
-    L = 0.5 * rho(r - R_0) * V**2 * A * 0.5
+        D = 0.5 * rho(r - R_0) * V**2 * self.findSurfaceArea() * 1
+        L = 0.5 * rho(r - R_0) * V**2 * self.findSurfaceArea() * 0.5
 
-    ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
-    scale = D * V / m
-    dyde = [(V * sin(gamma)) / scale,
-            
-            ((V * cos(gamma) * sin(psi)) / (r * cos(phi))) / scale,
-            
-            ((V * cos(gamma) * cos(psi)) / r) / scale,
-                            
-            ((1 / V) * (L * cos(sigma) / m + (V ** 2 - mu / r) * (cos(gamma) / r) + 2 * Omega * V * cos(phi) * sin(psi)
-                + Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / scale,
-            
-            ((1 / V) * (L * sin(sigma) / (cos(gamma) * m) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
-                - 2 * Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
-                + (Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))) / scale,
-            
-            (-V * cos(gamma) / r) / scale
+        ''' dyde = [r-dot, theta-dot, phi-dot, gamma-dot, psi-dot, s-dot] '''
+        scale = D * V / self.m
+        dyde = [(V * sin(gamma)) / scale,
+                
+                ((V * cos(gamma) * sin(psi)) / (r * cos(phi))) / scale,
+                
+                ((V * cos(gamma) * cos(psi)) / r) / scale,
+                                
+                ((1 / V) * (L * cos(sigma) / self.m + (V ** 2 - self.mu / r) * (cos(gamma) / r) + 2 * self.Omega * V * cos(phi) * sin(psi)
+                    + self.Omega ** 2 * r * cos(phi) * (cos(gamma) * cos(phi) + sin(gamma) * cos(psi) * sin(phi)))) / scale,
+                
+                ((1 / V) * (L * sin(sigma) / (cos(gamma) * self.m) + ((V ** 2 / r) * cos(gamma) * sin(psi) * tan(phi))
+                    - 2 * self.Omega * V * (tan(gamma) * cos(psi) * cos(phi) - sin(phi))
+                    + (self.Omega ** 2 * r / cos(gamma) * sin(psi) * sin(phi) * cos(phi)))) / scale,
+                
+                (-V * cos(gamma) / r) / scale
+                ]
         
-            ]
-    
-    return dyde
+        return dyde
 
-def find_flight_path(sigma, y_0):
-    # initial and final conditions for the vessel
-    r_0 = y_0[0]
-    v_0 = 7500
-    e_0 = E(r_0, v_0)
-    r_f = R_0 + 200
-    v_f = 250
-    e_f = E(r_f, v_f)
+        def find_flight_path(self, sigma, y_0):    
+            eList, de  = np.linspace(self.e_0, self.e_f, 5000), (self.e_f - self.e_0) / 5000
+            flightPath = []
+            for e in eList:
+                y_0 = [y_0[i] + dyde * de for i, dyde in enumerate(find_dyde(y_0, e, Omega, sigma, m, A))]
+                flightPath.append(y_0)
 
-    t_0 = 0
-    t_f = 150
-    print(sigma)
-    
-    #flightPath = np.array(odeint(find_dyde, y_0, eList, args=(Omega, sigma, m, A)))
+            return flightPath
 
-    eList, de  = np.linspace(e_0, e_f, 5000), (e_f - e_0) / 5000
-    flightPath = []
-    for e in eList:
-        y_0 = [y_0[i] + dyde * de for i, dyde in enumerate(find_dyde(y_0, e, Omega, sigma, m, A))]
-        flightPath.append(y_0)
+        def optimize_sigma(y_0, r_0, r_f, v_0, v_f):
+            r_0 = y_0[0]
+            e_0 = E(r_0, v_0)
+            e_f = E(r_f, v_f)
 
-    return flightPath
+            epsilon = 1e-12
 
-def optimize_sigma(y_0):
-    epsilon = 1e-12
+            sigma_0, sigma_1 = pi / 4, pi / 4 - pi / 64
 
-    sigma_0, sigma_1 = pi / 4, pi / 4 - pi / 64
+            z_0 = find_flight_path(sigma_0, y_0, e_0, e_f)[-1][5]
+            z_1 = find_flight_path(sigma_1, y_0, e_0, e_f)[-1][5]
 
-    z_0 = find_flight_path(sigma_0, y_0)[-1][5]
-    z_1 = find_flight_path(sigma_1, y_0)[-1][5]
+            # continues to search until the df/d_sigma is close enough to zero
+            while sigma_1 > 0 and abs(z_1 * (z_1 - z_0)) > epsilon:
+                sigma_2 = sigma_1 - (z_1 / (z_1 - z_0)) * (sigma_1 - sigma_0) 
+                sigma_0 = sigma_1
+                sigma_1 = sigma_2
 
-    # continues to search until the df/d_sigma is close enough to zero
-    while sigma_1 > 0 and abs(z_1 * (z_1 - z_0)) > epsilon:
-        sigma_2 = sigma_1 - (z_1 / (z_1 - z_0)) * (sigma_1 - sigma_0) 
-        sigma_0 = sigma_1
-        sigma_1 = sigma_2
+                z_0 = z_1
+                z_1 = find_flight_path(sigma_1, y_0, e_0, e_f)[-1][5]
 
-        z_0 = z_1
-        z_1 = find_flight_path(sigma_1, y_0)[-1][5]
+            return sigma_1
 
-    return sigma_1
+
+
+
+
+
+
+
+
+
+
+
 
 def graph_flight_path(flightPath, figureNum=0):
     xList, yList = [], []
