@@ -68,7 +68,7 @@ def optimize_bbg(tf1, tf2):
 
 
 # makes all necessary connections with ksp
-conn = krpc.connect(address='192.168.0.109')
+conn = krpc.connect()
 sc = conn.space_center
 vessel = sc.active_vessel
 ap = vessel.auto_pilot
@@ -83,6 +83,7 @@ md = T/(isp*9.81)
 tf1 = 1; tf2 = 2
 initial_heading = vessel.flight().heading
 ap.engage()
+ap.reference_frame = bcbf
 
 while tf > 1:
     x0, h0, u0, v0, m0 = update_state()
